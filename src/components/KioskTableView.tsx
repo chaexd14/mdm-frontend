@@ -1,17 +1,20 @@
 'use client';
 
 import React from 'react';
-import {
-  RotateCcw,
-  Power,
-  Wrench,
-  Sliders,
-  Copy,
-  Clock,
-  Globe,
-  ExternalLink,
-} from 'lucide-react';
+import { Copy, ExternalLink } from 'lucide-react';
 import { Kiosk } from '@/lib/types';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface KioskTableViewProps {
   kiosks: Kiosk[];
@@ -45,168 +48,171 @@ export function KioskTableView({
   };
 
   return (
-    <div className="w-full overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/60 shadow-lg">
-      <table className="w-full text-left text-xs text-slate-300">
-        <thead className="bg-slate-950/80 text-xs font-medium text-slate-400 border-b border-slate-800">
-          <tr>
-            <th className="py-3.5 px-4">Status</th>
-            <th className="py-3.5 px-4">Device ID & Name</th>
-            <th className="py-3.5 px-4">Target Kiosk URL</th>
-            <th className="py-3.5 px-4">Location</th>
-            <th className="py-3.5 px-4">OS & Versions</th>
-            <th className="py-3.5 px-4">Last Seen</th>
-            <th className="py-3.5 px-4">Mode</th>
-            <th className="py-3.5 px-4 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-800/60">
+    <div className="w-full rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <Table>
+        <TableHeader className="bg-muted/40 border-b border-border">
+          <TableRow>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Status</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Device ID & Name</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Target URL</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Location</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">OS & Versions</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Last Seen</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground">Mode</TableHead>
+            <TableHead className="py-2.5 px-4 text-xs font-medium text-muted-foreground text-right">Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {kiosks.map((kiosk) => {
             const online = isOnline(kiosk.lastSeen);
             const currentUrl = kiosk.kioskUrl || kiosk.url || 'https://app.hotel.saikotechsolutions.com/guest-booking/zicarelli';
             return (
-              <tr
+              <TableRow
                 key={kiosk.deviceId}
-                className="hover:bg-slate-800/40 transition-colors group"
+                className="hover:bg-muted/30 transition-colors"
               >
                 {/* Status Indicator */}
-                <td className="py-3.5 px-4 whitespace-nowrap">
-                  <div
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+                <TableCell className="py-2.5 px-4 whitespace-nowrap">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      'text-xs font-normal gap-1.5 px-2 py-0.5',
                       online
-                        ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                        : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                    }`}
+                        ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                        : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20'
+                    )}
                   >
                     <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        online ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-                      }`}
+                      className={cn(
+                        'size-1.5 rounded-full',
+                        online ? 'bg-emerald-500' : 'bg-rose-500'
+                      )}
                     ></span>
                     <span>{online ? 'Online' : 'Offline'}</span>
-                  </div>
-                </td>
+                  </Badge>
+                </TableCell>
 
                 {/* Device ID & Name */}
-                <td className="py-3.5 px-4">
-                  <div className="font-bold text-white group-hover:text-cyan-300 transition-colors">
+                <TableCell className="py-2.5 px-4">
+                  <div className="text-xs font-medium text-foreground">
                     {kiosk.name}
                   </div>
                   <div className="flex items-center gap-1 mt-0.5">
-                    <code className="font-mono text-[11px] text-cyan-400 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-800/40">
+                    <code className="font-mono text-[11px] text-muted-foreground bg-muted px-1 py-0.5 rounded">
                       {kiosk.deviceId}
                     </code>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(kiosk.deviceId)}
-                      className="text-slate-500 hover:text-slate-300 p-0.5"
-                      title="Copy deviceId"
-                    >
-                      <Copy className="w-3 h-3" />
-                    </button>
+                    <Tooltip>
+                      <TooltipTrigger render={
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => navigator.clipboard.writeText(kiosk.deviceId)}
+                          className="h-4 w-4 text-muted-foreground hover:text-foreground"
+                        />
+                      }>
+                        <Copy className="size-2.5" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <span>Copy Device ID</span>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
-                </td>
+                </TableCell>
 
                 {/* Target Kiosk URL */}
-                <td className="py-3.5 px-4 max-w-[200px]">
+                <TableCell className="py-2.5 px-4 max-w-[200px]">
                   <div className="flex items-center gap-1.5">
-                    <span className="truncate font-mono text-[11px] text-indigo-300" title={currentUrl}>
+                    <span className="truncate font-mono text-[11px] text-muted-foreground" title={currentUrl}>
                       {currentUrl}
                     </span>
                     <a
                       href={currentUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-slate-500 hover:text-indigo-300 transition-colors shrink-0"
-                      title="Open URL"
+                      className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      title="Open URL in new tab"
                     >
-                      <ExternalLink className="w-3 h-3" />
+                      <ExternalLink className="size-3" />
                     </a>
                   </div>
-                </td>
+                </TableCell>
 
                 {/* Location */}
-                <td className="py-3.5 px-4 whitespace-nowrap">
-                  <span className="px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-medium">
-                    {kiosk.location || 'Manila'}
-                  </span>
-                </td>
+                <TableCell className="py-2.5 px-4 whitespace-nowrap text-xs text-foreground">
+                  {kiosk.location || 'Manila'}
+                </TableCell>
 
                 {/* OS & Versions */}
-                <td className="py-3.5 px-4 whitespace-nowrap font-mono text-[11px] text-slate-400">
-                  <div>{kiosk.os}</div>
-                  <div className="text-[10px] text-slate-500">
-                    Agent: v{kiosk.agentVersion} | App: v{kiosk.appVersion}
+                <TableCell className="py-2.5 px-4 whitespace-nowrap font-mono text-[11px] text-muted-foreground">
+                  <div className="text-foreground">{kiosk.os}</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    v{kiosk.agentVersion} / v{kiosk.appVersion}
                   </div>
-                </td>
+                </TableCell>
 
                 {/* Last Seen */}
-                <td className="py-3.5 px-4 whitespace-nowrap font-mono text-slate-400">
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-slate-500" />
-                    <span>{getRelativeTime(kiosk.lastSeen)}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 truncate max-w-[140px]">
-                    {kiosk.lastSeen ? new Date(kiosk.lastSeen).toLocaleTimeString() : '-'}
-                  </div>
-                </td>
+                <TableCell className="py-2.5 px-4 whitespace-nowrap text-xs text-muted-foreground">
+                  <div>{getRelativeTime(kiosk.lastSeen)}</div>
+                </TableCell>
 
                 {/* Maintenance Mode */}
-                <td className="py-3.5 px-4 whitespace-nowrap">
+                <TableCell className="py-2.5 px-4 whitespace-nowrap">
                   {kiosk.maintenanceMode ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                      <Wrench className="w-2.5 h-2.5" />
+                    <Badge
+                      variant="outline"
+                      className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px] font-normal"
+                    >
                       Maintenance
-                    </span>
+                    </Badge>
                   ) : (
-                    <span className="text-slate-500 text-[11px]">Normal</span>
+                    <span className="text-muted-foreground text-xs">Normal</span>
                   )}
-                </td>
-
+                </TableCell>
 
                 {/* Action Buttons */}
-                <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                  <div className="flex items-center justify-end gap-1.5">
-                    <button
+                <TableCell className="py-2.5 px-4 text-right whitespace-nowrap">
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => onSendRestart(kiosk.deviceId)}
                       disabled={isActionLoading}
-                      className="p-1.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900 text-indigo-300 border border-indigo-800/40 transition-colors disabled:opacity-50"
-                      title="Restart Kiosk"
+                      className="h-6 px-2 text-[11px]"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                    <button
+                      Restart
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={() => onSendShutdown(kiosk.deviceId)}
                       disabled={isActionLoading}
-                      className="p-1.5 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/40 transition-colors disabled:opacity-50"
-                      title="Shutdown Kiosk"
+                      className="h-6 px-2 text-[11px] text-destructive hover:bg-destructive/10 border-destructive/30"
                     >
-                      <Power className="w-3.5 h-3.5" />
-                    </button>
-                    <button
+                      Shutdown
+                    </Button>
+                    <Button
+                      variant={kiosk.maintenanceMode ? 'secondary' : 'outline'}
+                      size="sm"
                       onClick={() => onOpenMaintenance(kiosk)}
-                      className={`p-1.5 rounded-lg border transition-colors ${
-                        kiosk.maintenanceMode
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
-                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
-                      }`}
-                      title="Toggle Maintenance"
+                      className="h-6 px-2 text-[11px]"
                     >
-                      <Wrench className="w-3.5 h-3.5" />
-                    </button>
-                    <button
+                      {kiosk.maintenanceMode ? 'Exit Maint.' : 'Maint.'}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => onOpenDetail(kiosk)}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
-                      title="Details & Config"
+                      className="h-6 px-2 text-[11px] text-primary"
                     >
-                      <Sliders className="w-3.5 h-3.5" />
-                    </button>
+                      Details
+                    </Button>
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
-

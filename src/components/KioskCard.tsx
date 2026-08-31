@@ -2,20 +2,24 @@
 
 import React, { useState, useEffect } from 'react';
 import {
+  Copy,
+  Check,
+  ExternalLink,
+  MapPin,
+  Laptop,
+  Globe,
   RotateCcw,
   Power,
   Wrench,
   Sliders,
-  Copy,
-  Check,
-  MapPin,
-  Laptop,
-  Clock,
-  ShieldCheck,
-  Globe,
-  ExternalLink,
+  Tablet,
 } from 'lucide-react';
 import { Kiosk } from '@/lib/types';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
 interface KioskCardProps {
   kiosk: Kiosk;
@@ -52,7 +56,7 @@ export function KioskCard({
       setSecondsAgo(diffSec);
 
       if (diffSec < 10) {
-        setRelativeTime('Active just now');
+        setRelativeTime('Just now');
       } else if (diffSec < 60) {
         setRelativeTime(`${diffSec}s ago`);
       } else if (diffSec < 3600) {
@@ -85,183 +89,213 @@ export function KioskCard({
   };
 
   return (
-    <div className="group relative flex flex-col rounded-2xl bg-gradient-to-b from-slate-900/90 to-slate-950/90 border border-slate-800/80 hover:border-indigo-500/40 p-5 transition-all duration-300 hover:shadow-xl hover:shadow-indigo-950/20 hover:-translate-y-0.5">
-      {/* Top Header: Tablet Name, Device ID, Status Pill */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-bold text-white truncate group-hover:text-cyan-300 transition-colors">
-              {kiosk.name}
-            </h3>
-            {kiosk.maintenanceMode && (
-              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                <Wrench className="w-2.5 h-2.5" />
-                Maintenance
-              </span>
-            )}
+    <Card className="group relative flex flex-col transition-all duration-200 hover:border-primary/40 hover:shadow-sm">
+      {/* Top Card Header: Tablet Name, Device ID, Status Pill */}
+      <CardHeader className="p-4 pb-2.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5">
+              <Tablet className="size-4 text-primary shrink-0" />
+              <CardTitle className="text-sm font-medium text-foreground truncate">
+                {kiosk.name}
+              </CardTitle>
+              {kiosk.maintenanceMode && (
+                <Badge
+                  variant="outline"
+                  className="bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30 text-[10px] font-normal"
+                >
+                  Maintenance
+                </Badge>
+              )}
+            </div>
+
+            {/* Copyable Device ID */}
+            <div className="flex items-center gap-1.5 mt-1">
+              <code className="text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                {kiosk.deviceId}
+              </code>
+              <Tooltip>
+                <TooltipTrigger render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleCopyId}
+                    className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                  />
+                }>
+                  {copiedId ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                </TooltipTrigger>
+                <TooltipContent>
+                  <span>{copiedId ? 'Copied!' : 'Copy Device ID'}</span>
+                </TooltipContent>
+              </Tooltip>
+            </div>
           </div>
 
-          {/* Copyable Device ID */}
-          <div className="flex items-center gap-1.5 mt-1">
-            <code className="text-xs font-mono text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-800/50">
-              {kiosk.deviceId}
-            </code>
-            <button
-              onClick={handleCopyId}
-              className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
-              title="Copy device ID"
+          {/* Live Status Pill */}
+          <div className="flex flex-col items-end">
+            <Badge
+              variant="outline"
+              className={cn(
+                'text-xs font-normal gap-1.5 px-2 py-0.5',
+                isOnline
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20'
+                  : 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20'
+              )}
             >
-              {copiedId ? (
-                <Check className="w-3 h-3 text-emerald-400" />
-              ) : (
-                <Copy className="w-3 h-3" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Live Status Pill */}
-        <div className="flex flex-col items-end">
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${
-              isOnline
-                ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
-                : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-            }`}
-          >
-            <span className="relative flex h-2 w-2">
-              {isOnline && (
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              )}
               <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  isOnline ? 'bg-emerald-400' : 'bg-rose-400'
-                }`}
+                className={cn(
+                  'inline-flex rounded-full size-1.5',
+                  isOnline ? 'bg-emerald-500' : 'bg-rose-500'
+                )}
               ></span>
+              <span>{isOnline ? 'Online' : 'Offline'}</span>
+            </Badge>
+
+            <span className="text-[11px] text-muted-foreground mt-1">
+              {relativeTime}
             </span>
-            <span>{isOnline ? 'Online' : 'Offline'}</span>
-          </div>
-          <span className="text-[11px] text-slate-400 flex items-center gap-1 mt-1 font-mono">
-            <Clock className="w-2.5 h-2.5 text-slate-500" />
-            {relativeTime}
-          </span>
-        </div>
-      </div>
-
-      {/* Target Kiosk URL Box */}
-      <div className="my-2 p-3 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] text-slate-400">
-          <span className="flex items-center gap-1.5 font-semibold text-slate-300 text-xs">
-            <Globe className="w-3 h-3 text-indigo-400" />
-            Target URL (<code className="text-cyan-300 lowercase font-mono">kioskUrl</code>)
-          </span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleCopyUrl}
-              className="p-1 rounded text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
-              title="Copy URL"
-            >
-              {copiedUrl ? (
-                <Check className="w-3 h-3 text-emerald-400" />
-              ) : (
-                <Copy className="w-3 h-3" />
-              )}
-            </button>
-            <a
-              href={currentUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="p-1 rounded text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/50 transition-colors"
-              title="Open in new tab"
-            >
-              <ExternalLink className="w-3 h-3" />
-            </a>
           </div>
         </div>
-        <div className="font-mono text-xs text-indigo-300 break-all line-clamp-2 bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-          {currentUrl}
+      </CardHeader>
+
+      <CardContent className="p-4 pt-0 space-y-2.5 flex-1">
+        {/* Target Kiosk URL Box */}
+        <div className="p-2.5 rounded-lg bg-muted/40 border border-border space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Globe className="size-3 text-muted-foreground" />
+              <span>Target URL</span>
+            </span>
+            <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleCopyUrl}
+                    className="h-5 w-5 text-muted-foreground hover:text-foreground"
+                  />
+                }>
+                  {copiedUrl ? <Check className="size-3 text-emerald-600" /> : <Copy className="size-3" />}
+                </TooltipTrigger>
+                <TooltipContent>
+                  <span>{copiedUrl ? 'Copied!' : 'Copy URL'}</span>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger render={
+                  <a
+                    href={currentUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-1 rounded text-muted-foreground hover:text-foreground transition-colors inline-flex"
+                  >
+                    <ExternalLink className="size-3" />
+                  </a>
+                }>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <span>Open in new tab</span>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+
+          <div className="font-mono text-xs text-foreground/80 break-all line-clamp-1 bg-background p-1.5 rounded border border-border">
+            {currentUrl}
+          </div>
         </div>
-      </div>
 
-      {/* Device Telemetry Specs */}
-      <div className="grid grid-cols-2 gap-2 my-2 text-xs">
-        <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/50 p-2 rounded-lg border border-slate-800/60">
-          <MapPin className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-          <span className="truncate font-medium text-slate-300">{kiosk.location || 'Manila'}</span>
+        {/* Device Telemetry Specs */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="text-muted-foreground bg-muted/20 p-2 rounded border border-border truncate">
+            <span className="text-[10px] text-muted-foreground/70 flex items-center gap-1 mb-0.5">
+              <MapPin className="size-2.5" />
+              <span>Location</span>
+            </span>
+            <span className="text-foreground">{kiosk.location || 'Manila'}</span>
+          </div>
+          <div className="text-muted-foreground bg-muted/20 p-2 rounded border border-border truncate">
+            <span className="text-[10px] text-muted-foreground/70 flex items-center gap-1 mb-0.5">
+              <Laptop className="size-2.5" />
+              <span>OS</span>
+            </span>
+            <span className="text-foreground">{kiosk.os || 'Windows 11'}</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1.5 text-slate-400 bg-slate-950/50 p-2 rounded-lg border border-slate-800/60">
-          <Laptop className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-          <span className="truncate font-medium text-slate-300">{kiosk.os || 'Windows 11'}</span>
+
+        {/* Version Tags & Flags */}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
+          <Badge variant="secondary" className="px-1.5 py-0.5 font-normal">
+            Agent: v{kiosk.agentVersion}
+          </Badge>
+          <Badge variant="secondary" className="px-1.5 py-0.5 font-normal">
+            App: v{kiosk.appVersion}
+          </Badge>
+          {kiosk.allowTransactions && (
+            <Badge variant="outline" className="bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-normal">
+              Transactions
+            </Badge>
+          )}
         </div>
-      </div>
+      </CardContent>
 
-      {/* Version Tags & Flags */}
-      <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-slate-400 my-1">
-        <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-300">
-          Agent: v{kiosk.agentVersion}
-        </span>
-        <span className="px-2 py-0.5 rounded bg-slate-800/80 border border-slate-700/60 text-slate-300">
-          App: v{kiosk.appVersion}
-        </span>
-        {kiosk.allowTransactions && (
-          <span className="px-1.5 py-0.5 rounded bg-emerald-950/40 border border-emerald-800/40 text-emerald-400 flex items-center gap-0.5">
-            <ShieldCheck className="w-3 h-3" />
-            Transactions enabled
-          </span>
-        )}
-      </div>
-
-
-      {/* Card Action Buttons Toolbar */}
-      <div className="pt-3 mt-auto border-t border-slate-800/80 flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5">
+      {/* Card Action Buttons Footer */}
+      <CardFooter className="p-3 pt-2.5 mt-auto border-t border-border flex items-center justify-between gap-2 bg-muted/10">
+        <div className="flex items-center gap-1">
           {/* Quick Restart */}
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onSendRestart(kiosk.deviceId)}
             disabled={isActionLoading}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-800/50 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+            className="h-7 px-2 text-xs gap-1"
             title="Send Restart Command to C# Agent"
           >
-            <RotateCcw className="w-3 h-3" />
+            <RotateCcw data-icon="inline-start" className="size-3" />
             <span>Restart</span>
-          </button>
+          </Button>
 
           {/* Quick Shutdown */}
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => onSendShutdown(kiosk.deviceId)}
             disabled={isActionLoading}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/50 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
+            className="h-7 px-2 text-xs gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
             title="Send Shutdown Command to C# Agent"
           >
-            <Power className="w-3 h-3" />
+            <Power data-icon="inline-start" className="size-3" />
             <span>Shutdown</span>
-          </button>
+          </Button>
 
           {/* Maintenance Toggle */}
-          <button
+          <Button
+            variant={kiosk.maintenanceMode ? 'secondary' : 'outline'}
+            size="sm"
             onClick={() => onOpenMaintenance(kiosk)}
-            className={`p-1.5 rounded-lg border text-xs font-medium transition-all ${
-              kiosk.maintenanceMode
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30'
-                : 'bg-slate-800/80 text-slate-300 border-slate-700/80 hover:bg-slate-700/80'
-            }`}
+            className="h-7 px-2 text-xs gap-1"
             title="Toggle Maintenance Mode"
           >
-            <Wrench className="w-3.5 h-3.5" />
-          </button>
+            <Wrench data-icon="inline-start" className="size-3" />
+            <span>{kiosk.maintenanceMode ? 'Exit' : 'Maint.'}</span>
+          </Button>
         </div>
 
         {/* View Details / Config */}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onOpenDetail(kiosk)}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 border border-slate-700/80 text-xs font-medium transition-all active:scale-95"
+          className="h-7 px-2 text-xs text-primary gap-1"
           title="Inspect Telemetry & Settings"
         >
-          <Sliders className="w-3 h-3 text-cyan-400" />
-          <span>Config</span>
-        </button>
-      </div>
-    </div>
+          <Sliders data-icon="inline-start" className="size-3" />
+          <span>Details</span>
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }
-

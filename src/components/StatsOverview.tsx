@@ -3,6 +3,9 @@
 import React from 'react';
 import { Monitor, CheckCircle2, AlertTriangle, Wrench, Zap } from 'lucide-react';
 import { Kiosk } from '@/lib/types';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 interface StatsOverviewProps {
   kiosks: Kiosk[];
@@ -25,12 +28,11 @@ export function StatsOverview({
   const stats = [
     {
       id: 'all',
-      label: 'Total Fleet Tablets',
+      label: 'Total Fleet',
       value: total,
       subtext: 'Across all registered sites',
       icon: Monitor,
-      color: 'from-blue-500/20 to-indigo-500/20 border-blue-500/30 text-blue-400',
-      badgeBg: 'bg-blue-500/10 text-blue-400',
+      iconClass: 'text-muted-foreground',
     },
     {
       id: 'online',
@@ -38,9 +40,8 @@ export function StatsOverview({
       value: onlineCount,
       subtext: 'Heartbeat < 90s threshold',
       icon: CheckCircle2,
-      color: 'from-emerald-500/20 to-teal-500/20 border-emerald-500/30 text-emerald-400',
-      badgeBg: 'bg-emerald-500/10 text-emerald-400',
-      activeGlow: 'shadow-emerald-950/30 ring-1 ring-emerald-500/40',
+      iconClass: 'text-emerald-600 dark:text-emerald-400',
+      badge: total > 0 ? `${Math.round((onlineCount / total) * 100)}%` : undefined,
     },
     {
       id: 'offline',
@@ -48,8 +49,7 @@ export function StatsOverview({
       value: offlineCount,
       subtext: 'No signal ≥ 90s',
       icon: AlertTriangle,
-      color: 'from-rose-500/20 to-red-500/20 border-rose-500/30 text-rose-400',
-      badgeBg: 'bg-rose-500/10 text-rose-400',
+      iconClass: 'text-rose-600 dark:text-rose-400',
     },
     {
       id: 'maintenance',
@@ -57,8 +57,7 @@ export function StatsOverview({
       value: maintenanceCount,
       subtext: 'Customer banner active',
       icon: Wrench,
-      color: 'from-amber-500/20 to-orange-500/20 border-amber-500/30 text-amber-400',
-      badgeBg: 'bg-amber-500/10 text-amber-400',
+      iconClass: 'text-amber-600 dark:text-amber-400',
     },
     {
       id: 'commands',
@@ -66,46 +65,49 @@ export function StatsOverview({
       value: pendingCommandsCount,
       subtext: 'Awaiting C# Agent poll',
       icon: Zap,
-      color: 'from-cyan-500/20 to-sky-500/20 border-cyan-500/30 text-cyan-400',
-      badgeBg: 'bg-cyan-500/10 text-cyan-400',
+      iconClass: 'text-primary',
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 my-6">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 my-4">
       {stats.map((stat) => {
         const Icon = stat.icon;
         const isSelected = selectedFilter === stat.id;
         return (
-          <button
+          <Card
             key={stat.id}
+            size="sm"
             onClick={() => onSelectFilter(stat.id === 'commands' ? 'all' : stat.id)}
-            className={`flex flex-col text-left p-4 rounded-xl border transition-all duration-200 cursor-pointer ${
+            className={cn(
+              'cursor-pointer transition-all duration-150 select-none p-3.5 gap-2 justify-between',
               isSelected
-                ? 'bg-slate-800/90 border-indigo-500/60 shadow-lg shadow-indigo-950/40 ring-1 ring-indigo-500/40 translate-y-[-2px]'
-                : 'bg-slate-900/60 hover:bg-slate-800/60 border-slate-800/80 hover:border-slate-700/80'
-            }`}
+                ? 'bg-card ring-2 ring-primary border-primary/50 shadow-sm'
+                : 'hover:border-border hover:bg-muted/40'
+            )}
           >
-            <div className="flex items-center justify-between w-full mb-2">
-              <span className="text-xs font-medium text-slate-400">{stat.label}</span>
-              <div className={`p-1.5 rounded-lg border bg-gradient-to-br ${stat.color}`}>
-                <Icon className="w-4 h-4" />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{stat.label}</span>
+              <div className="flex items-center gap-1.5">
+                {stat.badge && (
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] h-4 px-1.5 font-normal"
+                  >
+                    {stat.badge}
+                  </Badge>
+                )}
+                <Icon className={cn('size-4', stat.iconClass)} />
               </div>
             </div>
 
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
+            <div>
+              <div className="text-2xl font-semibold text-foreground tracking-tight leading-none">
                 {stat.value}
-              </span>
-              {stat.id === 'online' && total > 0 && (
-                <span className="text-[11px] font-semibold text-emerald-400">
-                  {Math.round((onlineCount / total) * 100)}%
-                </span>
-              )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1 truncate">{stat.subtext}</p>
             </div>
-
-            <p className="text-[11px] text-slate-500 mt-1 truncate">{stat.subtext}</p>
-          </button>
+          </Card>
         );
       })}
     </div>

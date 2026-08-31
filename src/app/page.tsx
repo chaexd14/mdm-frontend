@@ -5,18 +5,11 @@ import {
   Search,
   LayoutGrid,
   List,
-  Filter,
-  RefreshCw,
   Plus,
-  Radio,
-  SlidersHorizontal,
   MapPin,
   Monitor,
-  CheckCircle2,
-  AlertTriangle,
-  Wrench,
-  Zap,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Kiosk, KioskCommand } from '@/lib/types';
 import { Header } from '@/components/Header';
 import { StatsOverview } from '@/components/StatsOverview';
@@ -24,10 +17,19 @@ import { KioskCard } from '@/components/KioskCard';
 import { KioskTableView } from '@/components/KioskTableView';
 import { MaintenanceModal } from '@/components/MaintenanceModal';
 import { CommandQueueModal } from '@/components/CommandQueueModal';
-import { AgentSimulatorModal } from '@/components/AgentSimulatorModal';
 import { KioskDetailModal } from '@/components/KioskDetailModal';
 import { RegisterKioskModal } from '@/components/RegisterKioskModal';
-import { ToastContainer, ToastMessage } from '@/components/Toast';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export default function KioskDashboardPage() {
   const [kiosks, setKiosks] = useState<Kiosk[]>([]);
@@ -46,20 +48,7 @@ export default function KioskDashboardPage() {
   const [maintenanceKiosk, setMaintenanceKiosk] = useState<Kiosk | null>(null);
   const [detailKiosk, setDetailKiosk] = useState<Kiosk | null>(null);
   const [isCommandQueueOpen, setIsCommandQueueOpen] = useState(false);
-  const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-
-  // Toasts
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const addToast = (type: 'success' | 'error' | 'info', title: string, message?: string) => {
-    const id = `toast_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-    setToasts((prev) => [...prev, { id, type, title, message }]);
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
 
   // Fetch all kiosks
   const fetchKiosks = useCallback(async (showLoading = false) => {
@@ -120,17 +109,15 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast(
-          'success',
-          'Restart Command Queued',
-          `Dispatched to ${deviceId}. The C# agent will execute shutdown.exe /r.`
-        );
+        toast.success('Restart Command Queued', {
+          description: `Dispatched to ${deviceId}. C# agent will execute shutdown.exe /r.`,
+        });
         refreshAll();
       } else {
-        addToast('error', 'Failed to Queue Command', data.error);
+        toast.error('Failed to Queue Command', { description: data.error });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -143,17 +130,15 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast(
-          'info',
-          'Shutdown Command Queued',
-          `Dispatched to ${deviceId}. The C# agent will execute shutdown.exe /s.`
-        );
+        toast.info('Shutdown Command Queued', {
+          description: `Dispatched to ${deviceId}. C# agent will execute shutdown.exe /s.`,
+        });
         refreshAll();
       } else {
-        addToast('error', 'Failed to Queue Command', data.error);
+        toast.error('Failed to Queue Command', { description: data.error });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -166,17 +151,18 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast(
-          'success',
+        toast.success(
           enabled ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
-          `Kiosk ${deviceId} is now ${enabled ? 'displaying maintenance banner' : 'in active service'}.`
+          {
+            description: `Kiosk ${deviceId} is now ${enabled ? 'displaying maintenance banner' : 'in active service'}.`,
+          }
         );
         refreshAll();
       } else {
-        addToast('error', 'Update Failed', data.error);
+        toast.error('Update Failed', { description: data.error });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -189,13 +175,15 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast('success', 'Kiosk URL Updated', `Tablet ${deviceId} set to load ${url}`);
+        toast.success('Kiosk URL Updated', {
+          description: `Tablet ${deviceId} set to load ${url}`,
+        });
         refreshAll();
       } else {
-        addToast('error', 'Update URL Failed', data.error);
+        toast.error('Update URL Failed', { description: data.error });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -211,21 +199,20 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success && data.data) {
-        addToast(
-          'success',
-          'Kiosk Details Updated',
-          `Tablet ${data.data.name} (${data.data.deviceId}) updated successfully.`
-        );
+        toast.success('Kiosk Details Updated', {
+          description: `Tablet ${data.data.name} (${data.data.deviceId}) updated successfully.`,
+        });
         setDetailKiosk(data.data);
         refreshAll();
       } else {
-        addToast('error', 'Update Failed', data.error || 'Failed to update kiosk details');
+        toast.error('Update Failed', {
+          description: data.error || 'Failed to update kiosk details',
+        });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
-
 
   const handleRegisterKiosk = async (formData: {
     deviceId: string;
@@ -234,6 +221,7 @@ export default function KioskDashboardPage() {
     agentVersion: string;
     appVersion: string;
     location: string;
+    kioskUrl?: string;
   }) => {
     try {
       const res = await fetch('/api/kiosks/register', {
@@ -243,13 +231,15 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast('success', 'Tablet Enrolled Successfully', `${formData.deviceId} added to fleet.`);
+        toast.success('Tablet Enrolled Successfully', {
+          description: `${formData.deviceId} added to fleet.`,
+        });
         refreshAll();
       } else {
-        addToast('error', 'Registration Failed', data.error);
+        toast.error('Registration Failed', { description: data.error });
       }
     } catch (err: any) {
-      addToast('error', 'Network Error', err.message);
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -262,12 +252,13 @@ export default function KioskDashboardPage() {
       });
       const data = await res.json();
       if (data.success) {
-        addToast('success', 'Command Acknowledged', `Command ${commandId} marked as executed.`);
+        toast.success('Command Acknowledged', {
+          description: `Command ${commandId} marked as executed.`,
+        });
         refreshAll();
       }
-
     } catch (err: any) {
-      addToast('error', 'Ack Error', err.message);
+      toast.error('Ack Error', { description: err.message });
     }
   };
 
@@ -298,14 +289,13 @@ export default function KioskDashboardPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white pb-16">
+    <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-primary-foreground pb-16">
       {/* Header Bar */}
       <Header
         onRefresh={() => fetchKiosks(true)}
         isLoading={isLoading}
         autoRefreshInterval={autoRefreshInterval}
         setAutoRefreshInterval={setAutoRefreshInterval}
-        onOpenSimulator={() => setIsSimulatorOpen(true)}
         onOpenRegister={() => setIsRegisterOpen(true)}
         onOpenCommandQueue={() => setIsCommandQueueOpen(true)}
         pendingCommandsCount={pendingCommandsCount}
@@ -323,128 +313,130 @@ export default function KioskDashboardPage() {
         />
 
         {/* Search, Location, Status Filters & View Controls Bar */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-900/80 border border-slate-800/80 shadow-lg backdrop-blur-md mb-6">
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by Tablet Name, Device ID, Location, OS..."
-              className="w-full pl-10 pr-4 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/80 focus:ring-1 focus:ring-indigo-500/50 transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-300"
-              >
-                Clear
-              </button>
-            )}
-          </div>
+        <Card className="p-3 mb-6 bg-card border-border shadow-sm">
+          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            {/* Search Box */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by Tablet Name, Device ID, Location, OS..."
+                className="pl-9 pr-14 text-xs h-9"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground h-6 px-1.5"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
 
-          {/* Location Filter */}
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-              <select
+            {/* Location & View Mode Filters */}
+            <div className="flex items-center gap-2">
+              <Select
                 value={selectedLocation}
-                onChange={(e) => setSelectedLocation(e.target.value)}
-                className="pl-8 pr-8 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 font-medium cursor-pointer"
+                onValueChange={(val) => val && setSelectedLocation(val)}
               >
-                <option value="all">All Locations</option>
-                {locations
-                  .filter((l) => l !== 'all')
-                  .map((loc) => (
-                    <option key={loc} value={loc}>
-                      {loc}
-                    </option>
-                  ))}
-              </select>
-            </div>
+                <SelectTrigger className="h-9 w-[130px] text-xs">
+                  <SelectValue placeholder="All Locations" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {locations
+                    .filter((l) => l !== 'all')
+                    .map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
 
-            {/* View Mode Toggle (Grid vs Table) */}
-            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === 'grid'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-                title="Tablet Card Grid View"
+              {/* View Mode Toggle (Grid vs Table) */}
+              <ToggleGroup
+                value={[viewMode]}
+                onValueChange={(val) => {
+                  if (val && val.length > 0) setViewMode(val[0] as 'grid' | 'table');
+                }}
+                variant="outline"
+                size="sm"
+                className="h-9 p-0.5 bg-background border border-input rounded-lg"
               >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-lg transition-all ${
-                  viewMode === 'table'
-                    ? 'bg-indigo-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-                title="Table List View"
-              >
-                <List className="w-4 h-4" />
-              </button>
+                <ToggleGroupItem
+                  value="grid"
+                  className="h-7 w-7 p-0"
+                  title="Tablet Card Grid View"
+                >
+                  <LayoutGrid className="size-3.5" />
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="table"
+                  className="h-7 w-7 p-0"
+                  title="Table List View"
+                >
+                  <List className="size-3.5" />
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
           </div>
-        </div>
+        </Card>
 
         {/* Section Header: Showing counts & quick clear filters */}
-        <div className="flex items-center justify-between mb-4 text-xs text-slate-400">
+        <div className="flex items-center justify-between mb-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-200">
+            <span className="font-medium text-foreground">
               Fleet Tablets ({filteredKiosks.length})
             </span>
             {(searchQuery || selectedStatusFilter !== 'all' || selectedLocation !== 'all') && (
-              <button
+              <Button
+                variant="link"
+                size="xs"
                 onClick={() => {
                   setSearchQuery('');
                   setSelectedStatusFilter('all');
                   setSelectedLocation('all');
                 }}
-                className="text-indigo-400 hover:underline font-medium"
+                className="text-primary hover:underline p-0 h-auto text-xs"
               >
                 Reset Filters
-              </button>
+              </Button>
             )}
           </div>
 
-          <span className="text-[11px] font-mono text-slate-500">
+          <span className="text-[11px] text-muted-foreground">
             Online threshold: &lt;90s heartbeat
           </span>
         </div>
 
         {/* Main Content Area: Grid View or Table View */}
         {filteredKiosks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 rounded-2xl bg-slate-900/40 border border-slate-800 text-center my-6">
-            <div className="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-400 mb-3">
-              <Monitor className="w-7 h-7" />
-            </div>
-            <h3 className="text-sm font-bold text-white">No Kiosk Tablets Found</h3>
-            <p className="text-xs text-slate-400 max-w-sm mt-1">
-              {searchQuery
-                ? `No tablets matching "${searchQuery}". Try adjusting your search query or reset filters.`
-                : 'No tablets currently registered in the database. Use the Add Tablet button to enroll your first device.'}
-            </p>
-            <div className="flex items-center gap-3 mt-4">
-              <button
-                onClick={() => setIsRegisterOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Tablet</span>
-              </button>
-              <button
-                onClick={() => setIsSimulatorOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-all"
-              >
-                <span>Launch Simulator</span>
-              </button>
-            </div>
-          </div>
+          <Card className="p-12 text-center my-6 bg-card/40 border-dashed">
+            <CardContent className="flex flex-col items-center justify-center p-0">
+              <div className="size-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground mb-3">
+                <Monitor className="size-6" />
+              </div>
+              <h3 className="text-sm font-medium text-foreground">No Kiosk Tablets Found</h3>
+              <p className="text-xs text-muted-foreground max-w-sm mt-1">
+                {searchQuery
+                  ? `No tablets matching "${searchQuery}". Try adjusting your search query or reset filters.`
+                  : 'No tablets currently registered in the database. Use the Add Tablet button to enroll your first device.'}
+              </p>
+              <div className="flex items-center gap-2 mt-4">
+                <Button
+                  size="sm"
+                  onClick={() => setIsRegisterOpen(true)}
+                >
+                  Add Tablet
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ) : viewMode === 'grid' ? (
           /* Tablet Cards Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -499,21 +491,11 @@ export default function KioskDashboardPage() {
         onAckCommand={handleAckCommand}
       />
 
-      <AgentSimulatorModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        kiosks={kiosks}
-        onTriggerSync={refreshAll}
-      />
-
       <RegisterKioskModal
         isOpen={isRegisterOpen}
         onClose={() => setIsRegisterOpen(false)}
         onRegister={handleRegisterKiosk}
       />
-
-      {/* Live Toast Feedback */}
-      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
