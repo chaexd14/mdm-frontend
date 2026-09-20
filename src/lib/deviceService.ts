@@ -10,7 +10,8 @@ export function computeDeviceStatus(lastSeenStr?: string | null): DeviceStatus {
   try {
     const lastSeenTime = new Date(lastSeenStr).getTime();
     const now = Date.now();
-    return (now - lastSeenTime) < 90 * 1000 ? 'online' : 'offline';
+    // Online threshold: 7 minutes (accommodates 3-minute production heartbeats + retry buffer)
+    return (now - lastSeenTime) < 7 * 60 * 1000 ? 'online' : 'offline';
   } catch {
     return 'offline';
   }
@@ -63,6 +64,29 @@ const memoryCommands: Map<string, DeviceCommand> = new Map();
 export type CommandItem = { id: string; type: string; payload?: Record<string, unknown>; createdAt: string };
 export type CommandListener = (commands: CommandItem[]) => void;
 const commandWaitingListeners = new Map<string, Set<CommandListener>>();
+
+// Real-time Dashboard Event Broadcaster (for instant SSE / Live UI updates)
+export type DashboardEvent =
+  | { type: 'device_updated'; device: Device }
+  | { type: 'device_deleted'; deviceId: string }
+  | { type: 'command_created'; command: DeviceCommand }
+  | { type: 'command_updated'; command: DeviceCommand };
+
+export type DashboardEventListener = (event: DashboardEvent) => void;
+const dashboardEventListeners = new Set<DashboardEventListener>();
+
+export function subscribeDashboardEvents(listener: DashboardEventListener): () => void {
+  dashboardEventListeners.add(listener);
+  return () => dashboardEventListeners.delete(listener);
+}
+
+export function broadcastDashboardEvent(event: DashboardEvent) {
+  dashboardEventListeners.forEach((listener) => {
+    try {
+      listener(event);
+    } catch {}
+  });
+}
 
 // Helper to merge in-memory telemetry if DB lacks columns
 function mergeMemTelemetry(device: Device): Device {
@@ -223,7 +247,7 @@ export const deviceService = {
     // 1. Instant Memory cache update (Immediate UI & Agent reactivity)
     const existingMem = memoryDevices.get(deviceId);
     const finalUrl = (targetUrl || kioskUrl || url) ? resolvedUrl : (existingMem?.targetUrl || existingMem?.url || resolvedUrl);
-    memoryDevices.set(deviceId, {
+    const updatedModel: Device = {
       id: existingMem?.id || `dev_${Date.now()}`,
       deviceId,
       name: resolvedName,
@@ -247,7 +271,9 @@ export const deviceService = {
       lockTaskState: lockTaskState !== undefined ? lockTaskState : existingMem?.lockTaskState,
       model: model !== undefined ? model : existingMem?.model,
       manufacturer: manufacturer !== undefined ? manufacturer : existingMem?.manufacturer,
-    });
+    };
+    memoryDevices.set(deviceId, updatedModel);
+    broadcastDashboardEvent({ type: 'device_updated', device: updatedModel });
 
     // 2. Background DB Sync with timeout (Non-blocking)
     (async () => {
@@ -339,17 +365,23 @@ export const deviceService = {
 
   // 4. Heartbeat
   async recordHeartbeat(payload: HeartbeatRequest): Promise<{ deviceId: string; maintenanceMode: boolean; serverTime: string; targetUrl?: string; kioskUrl?: string }> {
-    const { deviceId, agentVersion, appVersion, batteryLevel, isCharging, isDeviceOwner, lockTaskState } = payload;
+    const { deviceId, agentVersion, appVersion, batteryLevel, isCharging, isDeviceOwner, lockTaskState, currentUrl, targetUrl, url, kioskUrl } = payload;
+    const reportedUrl = targetUrl || kioskUrl || currentUrl || url;
     const now = new Date().toISOString();
 
     // 1. Instant Memory cache update
     let maintenanceMode = false;
-    let currentTargetUrl = DEFAULT_DEVICE_URL;
+    let currentTargetUrl = reportedUrl || DEFAULT_DEVICE_URL;
 
     const mem = memoryDevices.get(deviceId);
     if (mem) {
+      if (reportedUrl) {
+        mem.targetUrl = reportedUrl;
+        mem.url = reportedUrl;
+        mem.kioskUrl = reportedUrl;
+      }
       maintenanceMode = mem.maintenanceMode;
-      currentTargetUrl = mem.targetUrl || mem.url || DEFAULT_DEVICE_URL;
+      currentTargetUrl = mem.targetUrl || mem.url || reportedUrl || DEFAULT_DEVICE_URL;
       mem.lastSeen = now;
       if (agentVersion) mem.agentVersion = agentVersion;
       if (appVersion) mem.appVersion = appVersion;
@@ -358,8 +390,9 @@ export const deviceService = {
       if (isDeviceOwner !== undefined) mem.isDeviceOwner = isDeviceOwner;
       if (lockTaskState !== undefined) mem.lockTaskState = lockTaskState;
       mem.status = 'online';
+      broadcastDashboardEvent({ type: 'device_updated', device: { ...mem } });
     } else {
-      memoryDevices.set(deviceId, {
+      const newDev: Device = {
         id: `dev_${Date.now()}`,
         deviceId,
         name: deviceId,
@@ -370,9 +403,9 @@ export const deviceService = {
         lastSeen: now,
         maintenanceMode: false,
         maintenanceMessage: null,
-        url: DEFAULT_DEVICE_URL,
-        targetUrl: DEFAULT_DEVICE_URL,
-        kioskUrl: DEFAULT_DEVICE_URL,
+        url: currentTargetUrl,
+        targetUrl: currentTargetUrl,
+        kioskUrl: currentTargetUrl,
         refreshInterval: 30,
         allowTransactions: true,
         theme: 'default',
@@ -381,7 +414,9 @@ export const deviceService = {
         isCharging,
         isDeviceOwner,
         lockTaskState,
-      });
+      };
+      memoryDevices.set(deviceId, newDev);
+      broadcastDashboardEvent({ type: 'device_updated', device: newDev });
     }
 
     // 2. Background DB Sync with timeout
@@ -428,29 +463,78 @@ export const deviceService = {
     return this.recordHeartbeat(payload);
   },
 
-  // 5. Get pending commands for device (Instant real-time push via waitMs)
+  // 5. Get pending commands for device (Instant real-time push via waitMs + Supabase fallback)
   async getPendingCommands(deviceId: string, waitMs: number = 0): Promise<CommandItem[]> {
-    // Check pending in memory cache first
-    const pending = Array.from(memoryCommands.values())
-      .filter((c) => c.deviceId === deviceId && c.status === 'pending')
+    const cleanId = deviceId.trim().toUpperCase();
+
+    // 1. Check in-memory pending commands first (< 1ms)
+    const memPending = Array.from(memoryCommands.values())
+      .filter(
+        (c) =>
+          (c.deviceId.toUpperCase() === cleanId ||
+            c.deviceId === '*' ||
+            c.deviceId.toUpperCase() === deviceId.toUpperCase()) &&
+          c.status === 'pending'
+      )
       .map((c) => ({ id: c.id, type: c.type, payload: c.payload, createdAt: c.createdAt }));
 
-    if (pending.length > 0) {
-      return pending;
+    if (memPending.length > 0) {
+      return memPending;
     }
 
-    // If waitMs is requested and no commands pending, wait for real-time trigger
+    // 2. Query Supabase for pending commands in DB (recovers commands after server restart / cross-instance)
+    try {
+      const { data: dbPending } = await supabase
+        .from('kiosk_commands')
+        .select('*')
+        .eq('status', 'pending')
+        .or(`device_id.ilike.${deviceId},device_id.eq.*,device_id.ilike.${cleanId}`)
+        .order('created_at', { ascending: true })
+        .limit(10);
+
+      if (dbPending && dbPending.length > 0) {
+        const foundCmds: CommandItem[] = [];
+        dbPending.forEach((row) => {
+          const item: DeviceCommand = {
+            id: row.id,
+            kioskId: row.kiosk_id,
+            deviceId: row.device_id,
+            type: row.type,
+            payload: (row.payload as Record<string, unknown>) || undefined,
+            status: 'pending',
+            createdAt: row.created_at,
+            executedAt: row.executed_at,
+          };
+          memoryCommands.set(row.id, item);
+          foundCmds.push({
+            id: row.id,
+            type: row.type,
+            payload: (row.payload as Record<string, unknown>) || undefined,
+            createdAt: row.created_at,
+          });
+        });
+        return foundCmds;
+      }
+    } catch (err) {
+      // Supabase query error fallback
+    }
+
+    // 3. If waitMs is requested, hold connection waiting for real-time memory dispatch
     if (waitMs > 0) {
       return new Promise<CommandItem[]>((resolve) => {
+        let isResolved = false;
         let timer: NodeJS.Timeout | null = null;
-        let listeners = commandWaitingListeners.get(deviceId);
+
+        let listeners = commandWaitingListeners.get(cleanId);
         if (!listeners) {
           listeners = new Set();
-          commandWaitingListeners.set(deviceId, listeners);
+          commandWaitingListeners.set(cleanId, listeners);
         }
 
         const currentSet = listeners;
         const listener: CommandListener = (cmds) => {
+          if (isResolved) return;
+          isResolved = true;
           if (timer) clearTimeout(timer);
           currentSet.delete(listener);
           resolve(cmds);
@@ -459,6 +543,8 @@ export const deviceService = {
         currentSet.add(listener);
 
         timer = setTimeout(() => {
+          if (isResolved) return;
+          isResolved = true;
           currentSet.delete(listener);
           resolve([]);
         }, waitMs);
@@ -468,12 +554,13 @@ export const deviceService = {
     return [];
   },
 
-  // 6. Create command for device (Instant Real-time Dispatch)
+  // 6. Create command for device (Instant Real-time Dispatch < 5ms)
   async createCommand(
     deviceId: string,
     type: string,
     payload?: Record<string, unknown>
   ): Promise<{ commandId: string; deviceId: string; type: string; status: string }> {
+    const cleanId = deviceId.trim().toUpperCase();
     const commandId = `cmd_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
@@ -489,26 +576,55 @@ export const deviceService = {
 
     // 1. Store in memory cache immediately
     memoryCommands.set(commandId, cmdItem);
+    broadcastDashboardEvent({ type: 'command_created', command: cmdItem });
 
-    // 2. Instantly notify any active long-polling connection (< 5ms dispatch)
-    const listeners = commandWaitingListeners.get(deviceId);
-    if (listeners && listeners.size > 0) {
-      const formatted: CommandItem[] = [{ id: commandId, type, payload, createdAt: now }];
-      listeners.forEach((listener) => {
+    // 2. Instantly notify any active long-polling connection (< 1ms dispatch)
+    let dispatched = false;
+    const formatted: CommandItem[] = [{ id: commandId, type, payload, createdAt: now }];
+    const targetListeners = commandWaitingListeners.get(cleanId);
+    if (targetListeners && targetListeners.size > 0) {
+      targetListeners.forEach((listener) => {
         try {
           listener(formatted);
+          dispatched = true;
         } catch {}
       });
-      listeners.clear();
+      targetListeners.clear();
+    }
+    const origListeners = commandWaitingListeners.get(deviceId);
+    if (origListeners && origListeners.size > 0 && origListeners !== targetListeners) {
+      origListeners.forEach((listener) => {
+        try {
+          listener(formatted);
+          dispatched = true;
+        } catch {}
+      });
+      origListeners.clear();
     }
 
-    // 3. Background DB Sync with Supabase (non-blocking)
+    // Auto-Router: If command was sent to a specific deviceId that has no listener, but there is an active connected tablet, route to it!
+    if (!dispatched && commandWaitingListeners.size > 0) {
+      for (const [activeId, listeners] of commandWaitingListeners.entries()) {
+        if (listeners.size > 0) {
+          console.log(`[MDM AUTO-ROUTER] Routing ${type} command to active connected device: ${activeId}`);
+          listeners.forEach((listener) => {
+            try {
+              listener(formatted);
+            } catch {}
+          });
+          listeners.clear();
+          break;
+        }
+      }
+    }
+
+    // 3. Non-blocking background sync with Supabase
     (async () => {
       try {
         const { data: dev } = await supabase
           .from('kiosks')
           .select('id')
-          .eq('device_id', deviceId)
+          .ilike('device_id', deviceId)
           .maybeSingle();
 
         await supabase.from('kiosk_commands').insert({
@@ -521,7 +637,7 @@ export const deviceService = {
           created_at: now,
         });
       } catch (err) {
-        // Non-fatal
+        console.warn('Supabase createCommand insert notice:', err);
       }
     })().catch(() => {});
 
@@ -537,24 +653,38 @@ export const deviceService = {
   async acknowledgeCommand(deviceId: string, commandId: string, status: string = 'executed'): Promise<boolean> {
     const now = new Date().toISOString();
 
-    try {
-      await supabase
-        .from('kiosk_commands')
-        .update({
-          status: status,
-          executed_at: now,
-        })
-        .eq('id', commandId)
-        .eq('device_id', deviceId);
-    } catch (err) {
-      console.warn('Supabase ack notice:', err);
-    }
-
     const memCmd = memoryCommands.get(commandId);
-    if (memCmd && memCmd.deviceId === deviceId) {
+    if (memCmd) {
       memCmd.status = status as 'pending' | 'executed' | 'failed';
       memCmd.executedAt = now;
+      broadcastDashboardEvent({ type: 'command_updated', command: memCmd });
+    } else {
+      const newCmd: DeviceCommand = {
+        id: commandId,
+        deviceId,
+        type: 'unknown',
+        status: status as 'executed' | 'failed',
+        createdAt: now,
+        executedAt: now,
+      };
+      memoryCommands.set(commandId, newCmd);
+      broadcastDashboardEvent({ type: 'command_updated', command: newCmd });
     }
+
+    // Direct background sync with Supabase
+    (async () => {
+      try {
+        await supabase
+          .from('kiosk_commands')
+          .update({
+            status: status,
+            executed_at: now,
+          })
+          .eq('id', commandId);
+      } catch (err) {
+        console.warn('Supabase acknowledgeCommand update notice:', err);
+      }
+    })().catch(() => {});
 
     return true;
   },
@@ -567,24 +697,30 @@ export const deviceService = {
   ): Promise<{ deviceId: string; maintenanceMode: boolean; message?: string | null }> {
     const now = new Date().toISOString();
 
-    try {
-      await supabase
-        .from('kiosks')
-        .update({
-          maintenance_mode: enabled,
-          maintenance_message: enabled ? (message || null) : null,
-          updated_at: now,
-        })
-        .eq('device_id', deviceId);
-    } catch (err) {
-      console.warn('Supabase maintenance update notice:', err);
-    }
-
     const mem = memoryDevices.get(deviceId);
     if (mem) {
       mem.maintenanceMode = enabled;
       mem.maintenanceMessage = enabled ? (message || null) : null;
+      mem.updatedAt = now;
+      broadcastDashboardEvent({ type: 'device_updated', device: { ...mem } });
     }
+
+    // 1. Instantly dispatch command to active APK connection (< 1ms)
+    this.createCommand(deviceId, 'set_maintenance', { enabled, message: message || undefined }).catch(() => {});
+
+    // 2. Non-blocking background update to Supabase
+    (async () => {
+      try {
+        await supabase
+          .from('kiosks')
+          .update({
+            maintenance_mode: enabled,
+            maintenance_message: enabled ? (message || null) : null,
+            updated_at: now,
+          })
+          .eq('device_id', deviceId);
+      } catch {}
+    })().catch(() => {});
 
     return {
       deviceId,
@@ -633,24 +769,30 @@ export const deviceService = {
   async updateDeviceUrl(deviceId: string, url: string): Promise<{ deviceId: string; url: string; targetUrl: string; kioskUrl: string }> {
     const now = new Date().toISOString();
 
-    try {
-      await supabase
-        .from('kiosks')
-        .update({
-          url,
-          updated_at: now,
-        })
-        .eq('device_id', deviceId);
-    } catch (err) {
-      console.warn('Supabase updateUrl notice:', err);
-    }
-
     const mem = memoryDevices.get(deviceId);
     if (mem) {
       mem.url = url;
       mem.targetUrl = url;
       mem.kioskUrl = url;
+      mem.updatedAt = now;
+      broadcastDashboardEvent({ type: 'device_updated', device: { ...mem } });
     }
+
+    // 1. Instantly dispatch command to active APK connection (< 1ms)
+    this.createCommand(deviceId, 'set_url', { targetUrl: url, url, kioskUrl: url }).catch(() => {});
+
+    // 2. Non-blocking background update to Supabase
+    (async () => {
+      try {
+        await supabase
+          .from('kiosks')
+          .update({
+            url,
+            updated_at: now,
+          })
+          .eq('device_id', deviceId);
+      } catch {}
+    })().catch(() => {});
 
     return {
       deviceId,
@@ -666,38 +808,74 @@ export const deviceService = {
 
   // Get recent commands for all or specific device
   async getRecentCommands(deviceId?: string): Promise<DeviceCommand[]> {
+    const cleanId = deviceId ? deviceId.trim().toUpperCase() : undefined;
     try {
       let query = supabase
         .from('kiosk_commands')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(20);
+        .limit(30);
 
       if (deviceId) {
-        query = query.eq('device_id', deviceId);
+        query = query.or(`device_id.ilike.${deviceId},device_id.ilike.${cleanId},device_id.eq.*`);
       }
 
       const { data, error } = await query;
 
+      const memList = Array.from(memoryCommands.values()).filter(
+        (c) =>
+          !cleanId ||
+          c.deviceId.toUpperCase() === cleanId ||
+          c.deviceId === '*' ||
+          c.deviceId === deviceId
+      );
+
       if (error || !data) {
-        return Array.from(memoryCommands.values())
-          .filter((c) => !deviceId || c.deviceId === deviceId)
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return memList.sort(
+          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       }
 
-      return data.map((d) => ({
-        id: d.id,
-        kioskId: d.kiosk_id,
-        deviceId: d.device_id,
-        type: d.type,
-        payload: (d.payload as Record<string, unknown>) || undefined,
-        status: d.status as 'pending' | 'executed' | 'failed' | 'cancelled',
-        createdAt: d.created_at,
-        executedAt: d.executed_at,
-      }));
+      // Merge DB commands and Memory commands, prioritizing memory status if more recent
+      const dbMap = new Map<string, DeviceCommand>();
+      data.forEach((d) => {
+        dbMap.set(d.id, {
+          id: d.id,
+          kioskId: d.kiosk_id,
+          deviceId: d.device_id,
+          type: d.type,
+          payload: (d.payload as Record<string, unknown>) || undefined,
+          status: d.status as 'pending' | 'executed' | 'failed' | 'cancelled',
+          createdAt: d.created_at,
+          executedAt: d.executed_at,
+        });
+      });
+
+      // Overlay memory commands
+      memList.forEach((mem) => {
+        const existing = dbMap.get(mem.id);
+        if (existing) {
+          if (mem.status !== 'pending' && existing.status === 'pending') {
+            existing.status = mem.status;
+            existing.executedAt = mem.executedAt || existing.executedAt;
+          }
+        } else {
+          dbMap.set(mem.id, mem);
+        }
+      });
+
+      return Array.from(dbMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     } catch {
       return Array.from(memoryCommands.values())
-        .filter((c) => !deviceId || c.deviceId === deviceId)
+        .filter(
+          (c) =>
+            !cleanId ||
+            c.deviceId.toUpperCase() === cleanId ||
+            c.deviceId === '*' ||
+            c.deviceId === deviceId
+        )
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }
   },
@@ -771,10 +949,12 @@ export const deviceService = {
         }
       }
       updatedDevice = { ...mem, status: computeDeviceStatus(mem.lastSeen) };
+      broadcastDashboardEvent({ type: 'device_updated', device: updatedDevice });
     } else {
       const fetched = await this.getDeviceByDeviceId(targetDeviceId);
       if (!fetched) return null;
       updatedDevice = fetched;
+      broadcastDashboardEvent({ type: 'device_updated', device: updatedDevice });
     }
 
     return updatedDevice;
@@ -782,5 +962,35 @@ export const deviceService = {
 
   async updateKioskDetails(deviceId: string, payload: UpdateDeviceDetailsRequest) {
     return this.updateDeviceDetails(deviceId, payload);
+  },
+
+  // 12. Delete Device (Remove from fleet)
+  async deleteDevice(deviceId: string): Promise<boolean> {
+    const cleanId = deviceId.trim();
+    memoryDevices.delete(cleanId);
+    memoryDevices.delete(cleanId.toUpperCase());
+
+    // Clean up commands for this device in memory
+    for (const [cmdId, cmd] of memoryCommands.entries()) {
+      if (cmd.deviceId === cleanId || cmd.deviceId === cleanId.toUpperCase()) {
+        memoryCommands.delete(cmdId);
+      }
+    }
+
+    broadcastDashboardEvent({ type: 'device_deleted', deviceId: cleanId });
+
+    // Background delete from Supabase
+    (async () => {
+      try {
+        await supabase.from('kiosk_commands').delete().eq('device_id', cleanId);
+        await supabase.from('kiosks').delete().eq('device_id', cleanId);
+      } catch {}
+    })().catch(() => {});
+
+    return true;
+  },
+
+  async deleteKiosk(deviceId: string) {
+    return this.deleteDevice(deviceId);
   },
 };

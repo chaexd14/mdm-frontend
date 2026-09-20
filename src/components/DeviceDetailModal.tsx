@@ -45,6 +45,7 @@ export interface DeviceDetailModalProps {
   onSendRestart?: (deviceId: string) => void;
   onSendShutdown?: (deviceId: string) => void;
   onOpenMaintenance: (device: Device) => void;
+  onDeleteDevice?: (deviceId: string) => Promise<void>;
 }
 
 export function DeviceDetailModal({
@@ -62,6 +63,7 @@ export function DeviceDetailModal({
   onSendRestart,
   onSendShutdown,
   onOpenMaintenance,
+  onDeleteDevice,
 }: DeviceDetailModalProps) {
   const device = deviceProp || kioskProp;
   const [name, setName] = useState(device?.name || '');
@@ -69,6 +71,7 @@ export function DeviceDetailModal({
   const [locationInput, setLocationInput] = useState(device?.location || '');
   const [isUpdatingDetails, setIsUpdatingDetails] = useState(false);
   const [detailsSaved, setDetailsSaved] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [url, setUrl] = useState(device?.targetUrl || device?.kioskUrl || device?.url || 'https://app.hotel.saikotechsolutions.com/guest-booking/zicarelli');
   const [isUpdatingUrl, setIsUpdatingUrl] = useState(false);
@@ -473,7 +476,28 @@ export function DeviceDetailModal({
           </Card>
         </div>
 
-        <DialogFooter className="pt-2 border-t border-border flex justify-end">
+        <DialogFooter className="pt-2 border-t border-border flex items-center justify-between sm:justify-between w-full">
+          {onDeleteDevice ? (
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={isDeleting}
+              onClick={async () => {
+                if (window.confirm(`Are you sure you want to remove "${device.name}" (${device.deviceId}) from the MDM fleet?`)) {
+                  setIsDeleting(true);
+                  try {
+                    await onDeleteDevice(device.deviceId);
+                    onClose();
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }
+              }}
+              className="text-xs"
+            >
+              {isDeleting ? 'Removing...' : 'Remove from Fleet'}
+            </Button>
+          ) : <div />}
           <Button variant="outline" size="sm" onClick={onClose}>
             Close
           </Button>

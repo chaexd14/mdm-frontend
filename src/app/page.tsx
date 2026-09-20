@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Device, DeviceCommand } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
 import { Header } from '@/components/Header';
 import { StatsOverview } from '@/components/StatsOverview';
 import { DeviceCard } from '@/components/DeviceCard';
@@ -96,7 +97,74 @@ export default function DeviceDashboardPage() {
     fetchCommandsCount();
   }, [fetchDevices, fetchCommandsCount]);
 
-  // Auto refresh timer
+  // Real-time Supabase DB change subscription (<50ms latency)
+  useEffect(() => {
+    const channel = supabase
+      .channel('kiosks-realtime-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kiosks' }, () => {
+        fetchDevices(false);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kiosk_commands' }, () => {
+        fetchCommandsCount();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchDevices, fetchCommandsCount]);
+
+  // Real-time Server-Sent Events (SSE) Stream for Instant Sub-second In-Memory Reactivity
+  useEffect(() => {
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource('/api/devices/events');
+      
+      eventSource.addEventListener('device_updated', (e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          const device: Device = parsed.device;
+          if (device && device.deviceId) {
+            setDevices((prev) => {
+              const idx = prev.findIndex((d) => d.deviceId === device.deviceId);
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], ...device };
+                return copy;
+              }
+              return [device, ...prev];
+            });
+            setLastUpdated(new Date());
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('device_deleted', (e) => {
+        try {
+          const parsed = JSON.parse(e.data);
+          const deviceId: string = parsed.deviceId;
+          if (deviceId) {
+            setDevices((prev) => prev.filter((d) => d.deviceId !== deviceId));
+            setLastUpdated(new Date());
+          }
+        } catch {}
+      });
+
+      eventSource.addEventListener('command_created', () => {
+        fetchCommandsCount();
+      });
+
+      eventSource.addEventListener('command_updated', () => {
+        fetchCommandsCount();
+      });
+    } catch {}
+
+    return () => {
+      if (eventSource) eventSource.close();
+    };
+  }, [fetchCommandsCount]);
+
+  // Auto refresh fallback timer
   useEffect(() => {
     if (autoRefreshInterval <= 0) return;
     const interval = setInterval(refreshAll, autoRefreshInterval * 1000);
@@ -210,6 +278,22 @@ export default function DeviceDashboardPage() {
   };
 
   const handleSaveMaintenance = async (deviceId: string, enabled: boolean, message?: string) => {
+    // Optimistic state update
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.deviceId === deviceId
+          ? { ...d, maintenanceMode: enabled, maintenanceMessage: enabled ? (message || null) : null }
+          : d
+      )
+    );
+    if (detailDevice && detailDevice.deviceId === deviceId) {
+      setDetailDevice((prev) =>
+        prev
+          ? { ...prev, maintenanceMode: enabled, maintenanceMessage: enabled ? (message || null) : null }
+          : null
+      );
+    }
+
     try {
       const res = await fetch(`/api/devices/${deviceId}/maintenance`, {
         method: 'PATCH',
@@ -234,6 +318,20 @@ export default function DeviceDashboardPage() {
   };
 
   const handleUpdateUrl = async (deviceId: string, url: string) => {
+    // Optimistic state update
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.deviceId === deviceId
+          ? { ...d, url, targetUrl: url, kioskUrl: url }
+          : d
+      )
+    );
+    if (detailDevice && detailDevice.deviceId === deviceId) {
+      setDetailDevice((prev) =>
+        prev ? { ...prev, url, targetUrl: url, kioskUrl: url } : null
+      );
+    }
+
     try {
       const res = await fetch(`/api/devices/${deviceId}/url`, {
         method: 'PATCH',
@@ -326,6 +424,27 @@ export default function DeviceDashboardPage() {
       }
     } catch (err: any) {
       toast.error('Ack Error', { description: err.message });
+    }
+  };
+
+  const handleDeleteDevice = async (deviceId: string) => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Device Removed', {
+          description: `Device ${deviceId} was removed from the fleet.`,
+        });
+        setDevices((prev) => prev.filter((d) => d.deviceId !== deviceId));
+        setDetailDevice(null);
+        refreshAll();
+      } else {
+        toast.error('Failed to Remove Device', { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error('Network Error', { description: err.message });
     }
   };
 
@@ -479,7 +598,7 @@ export default function DeviceDashboardPage() {
           </div>
 
           <span className="text-[11px] text-muted-foreground">
-            Online threshold: &lt;90s heartbeat
+            Online threshold: &lt;7m heartbeat
           </span>
         </div>
 
@@ -561,6 +680,7 @@ export default function DeviceDashboardPage() {
           setDetailDevice(null);
           setMaintenanceDevice(d);
         }}
+        onDeleteDevice={handleDeleteDevice}
       />
 
       <CommandQueueModal

@@ -107,3 +107,38 @@ export async function PATCH(
     );
   }
 }
+
+export async function DELETE(
+  _request: NextRequest,
+  context: { params: Promise<{ deviceId: string }> | { deviceId: string } }
+) {
+  try {
+    const { deviceId } = await Promise.resolve(context.params);
+
+    if (!deviceId) {
+      return jsonWithCors(
+        {
+          success: false,
+          error: 'deviceId is required',
+        },
+        { status: 400 }
+      );
+    }
+
+    await deviceService.deleteDevice(deviceId);
+
+    return jsonWithCors({
+      success: true,
+      message: `Device "${deviceId}" deleted successfully`,
+    });
+  } catch (error: any) {
+    console.error('Error deleting device:', error);
+    return jsonWithCors(
+      {
+        success: false,
+        error: error.message || 'Failed to delete device',
+      },
+      { status: 500 }
+    );
+  }
+}

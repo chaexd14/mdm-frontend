@@ -89,8 +89,8 @@ export function CommandQueueModal({
           </div>
         </DialogHeader>
 
-        {/* Filter Pills with ToggleGroup */}
-        <div className="py-2">
+        {/* Filter Pills with ToggleGroup & Ack All Action */}
+        <div className="py-2 flex items-center justify-between gap-2">
           <ToggleGroup
             value={[filter]}
             onValueChange={(val) => {
@@ -110,6 +110,23 @@ export function CommandQueueModal({
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
+
+          {commands.some((c) => c.status === 'pending') && onAckCommand && (
+            <Button
+              variant="outline"
+              size="xs"
+              className="text-xs text-amber-600 hover:bg-amber-500/10 border-amber-500/30"
+              onClick={async () => {
+                const pendingList = commands.filter((c) => c.status === 'pending');
+                for (const cmd of pendingList) {
+                  await onAckCommand(cmd.deviceId, cmd.id);
+                }
+                fetchCommands();
+              }}
+            >
+              Acknowledge All Pending ({commands.filter((c) => c.status === 'pending').length})
+            </Button>
+          )}
         </div>
 
         {/* Commands List */}
@@ -160,9 +177,12 @@ export function CommandQueueModal({
                         <Button
                           variant="outline"
                           size="xs"
-                          onClick={() => onAckCommand(cmd.deviceId, cmd.id)}
+                          onClick={async () => {
+                            await onAckCommand(cmd.deviceId, cmd.id);
+                            fetchCommands();
+                          }}
                           className="text-[11px]"
-                          title="Simulate agent acknowledging execution"
+                          title="Acknowledge execution"
                         >
                           Ack
                         </Button>

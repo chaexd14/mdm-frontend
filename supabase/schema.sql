@@ -71,3 +71,19 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_kiosks_device_id ON public.kiosks(device_id);
 CREATE INDEX IF NOT EXISTS idx_commands_device_id_status ON public.kiosk_commands(device_id, status);
 
+-- 6. Enable Realtime replication for instant dashboard reactivity
+DO $$
+BEGIN
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.kiosks;
+    EXCEPTION WHEN duplicate_object THEN
+        -- already added
+    END;
+    BEGIN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.kiosk_commands;
+    EXCEPTION WHEN duplicate_object THEN
+        -- already added
+    END;
+END $$;
+
+

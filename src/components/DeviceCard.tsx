@@ -89,7 +89,7 @@ export function DeviceCard({
     return () => clearInterval(interval);
   }, [device.lastSeen]);
 
-  const isOnline = secondsAgo < 90;
+  const isOnline = secondsAgo < 420; // 7 minutes online threshold
   const currentUrl = device.targetUrl || device.kioskUrl || device.url || 'https://app.hotel.saikotechsolutions.com/guest-booking/zicarelli';
   const isLocked = device.lockTaskState === 'LOCKED' || device.lockTaskState === 'PINNED';
 

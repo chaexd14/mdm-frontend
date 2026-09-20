@@ -101,3 +101,38 @@ export async function PATCH(
   }
 }
 
+export async function DELETE(
+  _request: NextRequest,
+  context: { params: Promise<{ deviceId: string }> | { deviceId: string } }
+) {
+  try {
+    const { deviceId } = await Promise.resolve(context.params);
+
+    if (!deviceId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'deviceId is required',
+        },
+        { status: 400 }
+      );
+    }
+
+    await kioskService.deleteKiosk(deviceId);
+
+    return NextResponse.json({
+      success: true,
+      message: `Kiosk "${deviceId}" deleted successfully`,
+    });
+  } catch (error: any) {
+    console.error('Error deleting kiosk:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Failed to delete kiosk',
+      },
+      { status: 500 }
+    );
+  }
+}
+

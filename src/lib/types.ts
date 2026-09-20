@@ -105,6 +105,10 @@ export interface HeartbeatRequest {
   agentVersion?: string;
   appVersion?: string;
   timestamp?: string;
+  currentUrl?: string;
+  targetUrl?: string;
+  url?: string;
+  kioskUrl?: string;
   // Android MDM Telemetry
   batteryLevel?: number;
   isCharging?: boolean;
