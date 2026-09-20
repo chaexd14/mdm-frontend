@@ -2,35 +2,38 @@
 
 import React from 'react';
 import { Monitor, CheckCircle2, AlertTriangle, Wrench, Zap } from 'lucide-react';
-import { Kiosk } from '@/lib/types';
+import { Device, Kiosk } from '@/lib/types';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 interface StatsOverviewProps {
-  kiosks: Kiosk[];
+  devices?: Device[];
+  kiosks?: Device[];
   pendingCommandsCount: number;
   selectedFilter: string;
   onSelectFilter: (filter: string) => void;
 }
 
 export function StatsOverview({
-  kiosks,
+  devices: devicesProp,
+  kiosks: kiosksProp,
   pendingCommandsCount,
   selectedFilter,
   onSelectFilter,
 }: StatsOverviewProps) {
-  const total = kiosks.length;
-  const onlineCount = kiosks.filter((k) => k.status === 'online').length;
-  const offlineCount = kiosks.filter((k) => k.status === 'offline').length;
-  const maintenanceCount = kiosks.filter((k) => k.maintenanceMode).length;
+  const devices = devicesProp || kiosksProp || [];
+  const total = devices.length;
+  const onlineCount = devices.filter((k) => k.status === 'online').length;
+  const offlineCount = devices.filter((k) => k.status === 'offline').length;
+  const maintenanceCount = devices.filter((k) => k.maintenanceMode).length;
 
   const stats = [
     {
       id: 'all',
       label: 'Total Fleet',
       value: total,
-      subtext: 'Across all registered sites',
+      subtext: 'Enrolled Android devices',
       icon: Monitor,
       iconClass: 'text-muted-foreground',
     },
@@ -38,7 +41,7 @@ export function StatsOverview({
       id: 'online',
       label: 'Active Online',
       value: onlineCount,
-      subtext: 'Heartbeat < 90s threshold',
+      subtext: 'Live heartbeat < 90s',
       icon: CheckCircle2,
       iconClass: 'text-emerald-600 dark:text-emerald-400',
       badge: total > 0 ? `${Math.round((onlineCount / total) * 100)}%` : undefined,
@@ -47,7 +50,7 @@ export function StatsOverview({
       id: 'offline',
       label: 'Offline Devices',
       value: offlineCount,
-      subtext: 'No signal ≥ 90s',
+      subtext: 'Unreachable ≥ 90s',
       icon: AlertTriangle,
       iconClass: 'text-rose-600 dark:text-rose-400',
     },
@@ -55,7 +58,7 @@ export function StatsOverview({
       id: 'maintenance',
       label: 'Maintenance Mode',
       value: maintenanceCount,
-      subtext: 'Customer banner active',
+      subtext: 'Device maintenance active',
       icon: Wrench,
       iconClass: 'text-amber-600 dark:text-amber-400',
     },
@@ -63,7 +66,7 @@ export function StatsOverview({
       id: 'commands',
       label: 'Pending Commands',
       value: pendingCommandsCount,
-      subtext: 'Awaiting C# Agent poll',
+      subtext: 'Queued for device poll',
       icon: Zap,
       iconClass: 'text-primary',
     },

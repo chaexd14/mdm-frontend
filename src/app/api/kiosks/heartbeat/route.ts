@@ -1,15 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { deviceId, agentVersion, appVersion, timestamp } = body;
+    const {
+      deviceId,
+      agentVersion,
+      appVersion,
+      timestamp,
+      batteryLevel,
+      isCharging,
+      isDeviceOwner,
+      lockTaskState,
+    } = body;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -23,15 +37,19 @@ export async function POST(request: NextRequest) {
       agentVersion,
       appVersion,
       timestamp,
+      batteryLevel,
+      isCharging,
+      isDeviceOwner,
+      lockTaskState,
     });
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: result,
     });
   } catch (error) {
     console.error('Error processing heartbeat:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to process heartbeat',

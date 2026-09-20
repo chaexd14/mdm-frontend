@@ -1,18 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
 
-// GET /api/kiosks/[deviceId]/commands - agent retrieves pending commands
+export async function OPTIONS() {
+  return handleOptions();
+}
+
+// GET /api/kiosks/[deviceId]/commands - agent retrieves pending commands with optional long-poll wait
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ deviceId: string }> | { deviceId: string } }
 ) {
   try {
     const { deviceId } = await Promise.resolve(context.params);
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -21,9 +26,13 @@ export async function GET(
       );
     }
 
-    const commands = await kioskService.getPendingCommands(deviceId);
+    const searchParams = request.nextUrl?.searchParams;
+    const waitSeconds = Math.max(0, Math.min(30, parseInt(searchParams?.get('wait') || '0', 10)));
+    const waitMs = waitSeconds * 1000;
 
-    return NextResponse.json({
+    const commands = await kioskService.getPendingCommands(deviceId, waitMs);
+
+    return jsonWithCors({
       success: true,
       data: {
         commands,
@@ -31,7 +40,7 @@ export async function GET(
     });
   } catch (error) {
     console.error('Error getting commands:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to retrieve commands',
@@ -52,7 +61,7 @@ export async function POST(
     const { type, payload } = body;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -62,10 +71,10 @@ export async function POST(
     }
 
     if (!type) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
-          error: 'command type is required (e.g., restart, shutdown, refresh)',
+          error: 'command type is required (e.g., reload, lock_kiosk, unlock_kiosk, set_url, set_maintenance)',
         },
         { status: 400 }
       );
@@ -73,13 +82,13 @@ export async function POST(
 
     const result = await kioskService.createCommand(deviceId, type, payload);
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: result,
     });
   } catch (error) {
     console.error('Error creating command:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to create command',

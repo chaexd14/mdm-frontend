@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function GET(
   _request: NextRequest,
@@ -11,7 +16,7 @@ export async function GET(
     const { deviceId } = await Promise.resolve(context.params);
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -23,7 +28,7 @@ export async function GET(
     const config = await kioskService.getKioskConfig(deviceId);
 
     if (!config) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: `Kiosk with deviceId "${deviceId}" not found`,
@@ -32,7 +37,7 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: {
         deviceId: config.deviceId || deviceId,
@@ -42,11 +47,17 @@ export async function GET(
         maintenanceMessage: config.maintenanceMessage,
         appVersion: config.appVersion,
         kioskUrl: config.kioskUrl,
+        batteryLevel: config.batteryLevel,
+        isCharging: config.isCharging,
+        isDeviceOwner: config.isDeviceOwner,
+        lockTaskState: config.lockTaskState,
+        model: config.model,
+        manufacturer: config.manufacturer,
       },
     });
   } catch (error) {
     console.error('Error fetching kiosk config:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to retrieve kiosk config',
@@ -66,7 +77,7 @@ export async function PATCH(
     const { kioskUrl, url, maintenanceMode, maintenanceMessage } = body;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -86,7 +97,7 @@ export async function PATCH(
 
     const updatedConfig = await kioskService.getKioskConfig(deviceId);
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: {
         maintenanceMode: updatedConfig?.maintenanceMode ?? false,
@@ -97,7 +108,7 @@ export async function PATCH(
     });
   } catch (error) {
     console.error('Error updating kiosk config:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to update kiosk config',
@@ -106,4 +117,3 @@ export async function PATCH(
     );
   }
 }
-

@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(
   request: NextRequest,
@@ -25,7 +30,7 @@ export async function POST(
     }
 
     if (!deviceId || !commandId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId and commandId are required',
@@ -36,12 +41,12 @@ export async function POST(
 
     await kioskService.acknowledgeCommand(deviceId, commandId, status);
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
     });
   } catch (error) {
     console.error('Error acknowledging command:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to acknowledge command',

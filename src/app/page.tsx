@@ -5,20 +5,18 @@ import {
   Search,
   LayoutGrid,
   List,
-  Plus,
-  MapPin,
   Monitor,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Kiosk, KioskCommand } from '@/lib/types';
+import { Device, DeviceCommand } from '@/lib/types';
 import { Header } from '@/components/Header';
 import { StatsOverview } from '@/components/StatsOverview';
-import { KioskCard } from '@/components/KioskCard';
-import { KioskTableView } from '@/components/KioskTableView';
+import { DeviceCard } from '@/components/DeviceCard';
+import { DeviceTableView } from '@/components/DeviceTableView';
 import { MaintenanceModal } from '@/components/MaintenanceModal';
 import { CommandQueueModal } from '@/components/CommandQueueModal';
-import { KioskDetailModal } from '@/components/KioskDetailModal';
-import { RegisterKioskModal } from '@/components/RegisterKioskModal';
+import { DeviceDetailModal } from '@/components/DeviceDetailModal';
+import { EnrollDeviceModal } from '@/components/EnrollDeviceModal';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -31,8 +29,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-export default function KioskDashboardPage() {
-  const [kiosks, setKiosks] = useState<Kiosk[]>([]);
+export default function DeviceDashboardPage() {
+  const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(5); // default 5s
@@ -45,23 +43,26 @@ export default function KioskDashboardPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
 
   // Modals state
-  const [maintenanceKiosk, setMaintenanceKiosk] = useState<Kiosk | null>(null);
-  const [detailKiosk, setDetailKiosk] = useState<Kiosk | null>(null);
+  const [maintenanceDevice, setMaintenanceDevice] = useState<Device | null>(null);
+  const [detailDevice, setDetailDevice] = useState<Device | null>(null);
   const [isCommandQueueOpen, setIsCommandQueueOpen] = useState(false);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
+  const [isEnrollOpen, setIsEnrollOpen] = useState(false);
 
-  // Fetch all kiosks
-  const fetchKiosks = useCallback(async (showLoading = false) => {
+  // Fetch all devices
+  const fetchDevices = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
     try {
-      const res = await fetch('/api/kiosks');
+      let res = await fetch('/api/devices');
+      if (!res.ok) {
+        res = await fetch('/api/kiosks');
+      }
       const data = await res.json();
-      if (data.success && data.data?.kiosks) {
-        setKiosks(data.data.kiosks);
+      if (data.success && (data.data?.devices || data.data?.kiosks)) {
+        setDevices(data.data.devices || data.data.kiosks);
         setLastUpdated(new Date());
       }
     } catch (err) {
-      console.error('Failed to load kiosks:', err);
+      console.error('Failed to load devices:', err);
     } finally {
       setIsLoading(false);
     }
@@ -70,10 +71,13 @@ export default function KioskDashboardPage() {
   // Fetch pending commands count
   const fetchCommandsCount = useCallback(async () => {
     try {
-      const res = await fetch('/api/kiosks/commands');
+      let res = await fetch('/api/devices/commands');
+      if (!res.ok) {
+        res = await fetch('/api/kiosks/commands');
+      }
       const data = await res.json();
       if (data.success && data.data?.commands) {
-        const pending = data.data.commands.filter((c: KioskCommand) => c.status === 'pending').length;
+        const pending = data.data.commands.filter((c: DeviceCommand) => c.status === 'pending').length;
         setPendingCommandsCount(pending);
       }
     } catch {
@@ -82,15 +86,15 @@ export default function KioskDashboardPage() {
   }, []);
 
   const refreshAll = useCallback(() => {
-    fetchKiosks(false);
+    fetchDevices(false);
     fetchCommandsCount();
-  }, [fetchKiosks, fetchCommandsCount]);
+  }, [fetchDevices, fetchCommandsCount]);
 
   // Initial load
   useEffect(() => {
-    fetchKiosks(true);
+    fetchDevices(true);
     fetchCommandsCount();
-  }, [fetchKiosks, fetchCommandsCount]);
+  }, [fetchDevices, fetchCommandsCount]);
 
   // Auto refresh timer
   useEffect(() => {
@@ -99,10 +103,73 @@ export default function KioskDashboardPage() {
     return () => clearInterval(interval);
   }, [autoRefreshInterval, refreshAll]);
 
-  // Actions
+  // Android MDM Actions
+  const handleReloadApp = async (deviceId: string) => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'reload' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Reload Command Queued', {
+          description: `Dispatched to ${deviceId}. The Android MDM device will reload the managed web app.`,
+        });
+        refreshAll();
+      } else {
+        toast.error('Failed to Queue Command', { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error('Network Error', { description: err.message });
+    }
+  };
+
+  const handleLockDevice = async (deviceId: string) => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'lock_kiosk' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Lock Device Command Queued', {
+          description: `Dispatched to ${deviceId}. Device will engage Lock Task Mode.`,
+        });
+        refreshAll();
+      } else {
+        toast.error('Failed to Queue Command', { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error('Network Error', { description: err.message });
+    }
+  };
+
+  const handleUnlockDevice = async (deviceId: string) => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'unlock_kiosk' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.info('Unlock Device Command Queued', {
+          description: `Dispatched to ${deviceId}. Device will release Lock Task Mode to allow launcher access.`,
+        });
+        refreshAll();
+      } else {
+        toast.error('Failed to Queue Command', { description: data.error });
+      }
+    } catch (err: any) {
+      toast.error('Network Error', { description: err.message });
+    }
+  };
+
   const handleSendRestart = async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}/commands`, {
+      const res = await fetch(`/api/devices/${deviceId}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'restart' }),
@@ -110,7 +177,7 @@ export default function KioskDashboardPage() {
       const data = await res.json();
       if (data.success) {
         toast.success('Restart Command Queued', {
-          description: `Dispatched to ${deviceId}. C# agent will execute shutdown.exe /r.`,
+          description: `Dispatched to ${deviceId}. Device will restart application.`,
         });
         refreshAll();
       } else {
@@ -123,7 +190,7 @@ export default function KioskDashboardPage() {
 
   const handleSendShutdown = async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}/commands`, {
+      const res = await fetch(`/api/devices/${deviceId}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'shutdown' }),
@@ -131,7 +198,7 @@ export default function KioskDashboardPage() {
       const data = await res.json();
       if (data.success) {
         toast.info('Shutdown Command Queued', {
-          description: `Dispatched to ${deviceId}. C# agent will execute shutdown.exe /s.`,
+          description: `Dispatched shutdown to ${deviceId}.`,
         });
         refreshAll();
       } else {
@@ -144,7 +211,7 @@ export default function KioskDashboardPage() {
 
   const handleSaveMaintenance = async (deviceId: string, enabled: boolean, message?: string) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}/maintenance`, {
+      const res = await fetch(`/api/devices/${deviceId}/maintenance`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled, message }),
@@ -154,7 +221,7 @@ export default function KioskDashboardPage() {
         toast.success(
           enabled ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
           {
-            description: `Kiosk ${deviceId} is now ${enabled ? 'displaying maintenance banner' : 'in active service'}.`,
+            description: `Device ${deviceId} is now ${enabled ? 'displaying maintenance banner' : 'in active service'}.`,
           }
         );
         refreshAll();
@@ -168,15 +235,15 @@ export default function KioskDashboardPage() {
 
   const handleUpdateUrl = async (deviceId: string, url: string) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}/url`, {
+      const res = await fetch(`/api/devices/${deviceId}/url`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, targetUrl: url }),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('Kiosk URL Updated', {
-          description: `Tablet ${deviceId} set to load ${url}`,
+        toast.success('Managed App URL Updated', {
+          description: `Device ${deviceId} set to load ${url}`,
         });
         refreshAll();
       } else {
@@ -187,26 +254,26 @@ export default function KioskDashboardPage() {
     }
   };
 
-  const handleUpdateKioskDetails = async (
+  const handleUpdateDeviceDetails = async (
     deviceId: string,
     updateData: { name?: string; newDeviceId?: string; location?: string; os?: string }
   ) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}`, {
+      const res = await fetch(`/api/devices/${deviceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData),
       });
       const data = await res.json();
       if (data.success && data.data) {
-        toast.success('Kiosk Details Updated', {
-          description: `Tablet ${data.data.name} (${data.data.deviceId}) updated successfully.`,
+        toast.success('Device Details Updated', {
+          description: `Device ${data.data.name} (${data.data.deviceId}) updated successfully.`,
         });
-        setDetailKiosk(data.data);
+        setDetailDevice(data.data);
         refreshAll();
       } else {
         toast.error('Update Failed', {
-          description: data.error || 'Failed to update kiosk details',
+          description: data.error || 'Failed to update device details',
         });
       }
     } catch (err: any) {
@@ -214,25 +281,25 @@ export default function KioskDashboardPage() {
     }
   };
 
-  const handleRegisterKiosk = async (formData: {
+  const handleEnrollDevice = async (formData: {
     deviceId: string;
     deviceName: string;
     os: string;
     agentVersion: string;
     appVersion: string;
     location: string;
-    kioskUrl?: string;
+    targetUrl?: string;
   }) => {
     try {
-      const res = await fetch('/api/kiosks/register', {
+      const res = await fetch('/api/devices/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('Tablet Enrolled Successfully', {
-          description: `${formData.deviceId} added to fleet.`,
+        toast.success('Device Enrolled Successfully', {
+          description: `${formData.deviceId} added to MDM fleet.`,
         });
         refreshAll();
       } else {
@@ -245,7 +312,7 @@ export default function KioskDashboardPage() {
 
   const handleAckCommand = async (deviceId: string, commandId: string) => {
     try {
-      const res = await fetch(`/api/kiosks/${deviceId}/commands/${commandId}/ack`, {
+      const res = await fetch(`/api/devices/${deviceId}/commands/${commandId}/ack`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'executed' }),
@@ -263,10 +330,10 @@ export default function KioskDashboardPage() {
   };
 
   // Extract unique locations for filter
-  const locations = ['all', ...Array.from(new Set(kiosks.map((k) => k.location || 'Manila')))];
+  const locations = ['all', ...Array.from(new Set(devices.map((k) => k.location || 'Manila')))];
 
-  // Filtered kiosks
-  const filteredKiosks = kiosks.filter((k) => {
+  // Filtered devices
+  const filteredDevices = devices.filter((k) => {
     // Search query
     const matchSearch =
       !searchQuery ||
@@ -292,11 +359,12 @@ export default function KioskDashboardPage() {
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-primary-foreground pb-16">
       {/* Header Bar */}
       <Header
-        onRefresh={() => fetchKiosks(true)}
+        onRefresh={() => fetchDevices(true)}
         isLoading={isLoading}
         autoRefreshInterval={autoRefreshInterval}
         setAutoRefreshInterval={setAutoRefreshInterval}
-        onOpenRegister={() => setIsRegisterOpen(true)}
+        onOpenEnroll={() => setIsEnrollOpen(true)}
+        onOpenRegister={() => setIsEnrollOpen(true)}
         onOpenCommandQueue={() => setIsCommandQueueOpen(true)}
         pendingCommandsCount={pendingCommandsCount}
         lastUpdated={lastUpdated}
@@ -306,7 +374,8 @@ export default function KioskDashboardPage() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 lg:px-8 pt-4">
         {/* KPI Stats Overview */}
         <StatsOverview
-          kiosks={kiosks}
+          devices={devices}
+          kiosks={devices}
           pendingCommandsCount={pendingCommandsCount}
           selectedFilter={selectedStatusFilter}
           onSelectFilter={setSelectedStatusFilter}
@@ -322,7 +391,7 @@ export default function KioskDashboardPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by Tablet Name, Device ID, Location, OS..."
+                placeholder="Search by Device Name, Device ID, Location, OS..."
                 className="pl-9 pr-14 text-xs h-9"
               />
               {searchQuery && (
@@ -371,14 +440,14 @@ export default function KioskDashboardPage() {
                 <ToggleGroupItem
                   value="grid"
                   className="h-7 w-7 p-0"
-                  title="Tablet Card Grid View"
+                  title="Device Card Grid View"
                 >
                   <LayoutGrid className="size-3.5" />
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="table"
                   className="h-7 w-7 p-0"
-                  title="Table List View"
+                  title="Device Table View"
                 >
                   <List className="size-3.5" />
                 </ToggleGroupItem>
@@ -391,7 +460,7 @@ export default function KioskDashboardPage() {
         <div className="flex items-center justify-between mb-4 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="font-medium text-foreground">
-              Fleet Tablets ({filteredKiosks.length})
+              Fleet Devices ({filteredDevices.length})
             </span>
             {(searchQuery || selectedStatusFilter !== 'all' || selectedLocation !== 'all') && (
               <Button
@@ -415,73 +484,82 @@ export default function KioskDashboardPage() {
         </div>
 
         {/* Main Content Area: Grid View or Table View */}
-        {filteredKiosks.length === 0 ? (
+        {filteredDevices.length === 0 ? (
           <Card className="p-12 text-center my-6 bg-card/40 border-dashed">
             <CardContent className="flex flex-col items-center justify-center p-0">
               <div className="size-12 rounded-xl bg-muted border border-border flex items-center justify-center text-muted-foreground mb-3">
                 <Monitor className="size-6" />
               </div>
-              <h3 className="text-sm font-medium text-foreground">No Kiosk Tablets Found</h3>
+              <h3 className="text-sm font-medium text-foreground">No MDM Devices Found</h3>
               <p className="text-xs text-muted-foreground max-w-sm mt-1">
                 {searchQuery
-                  ? `No tablets matching "${searchQuery}". Try adjusting your search query or reset filters.`
-                  : 'No tablets currently registered in the database. Use the Add Tablet button to enroll your first device.'}
+                  ? `No devices matching "${searchQuery}". Try adjusting your search query or reset filters.`
+                  : 'No devices currently enrolled in the database. Use the Enroll Device button to add your first terminal.'}
               </p>
               <div className="flex items-center gap-2 mt-4">
                 <Button
                   size="sm"
-                  onClick={() => setIsRegisterOpen(true)}
+                  onClick={() => setIsEnrollOpen(true)}
                 >
-                  Add Tablet
+                  Enroll Device
                 </Button>
               </div>
             </CardContent>
           </Card>
         ) : viewMode === 'grid' ? (
-          /* Tablet Cards Grid */
+          /* Device Cards Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredKiosks.map((kiosk) => (
-              <KioskCard
-                key={kiosk.deviceId}
-                kiosk={kiosk}
+            {filteredDevices.map((device) => (
+              <DeviceCard
+                key={device.deviceId}
+                device={device}
+                onSendReload={handleReloadApp}
+                onSendLockDevice={handleLockDevice}
+                onSendUnlockDevice={handleUnlockDevice}
                 onSendRestart={handleSendRestart}
                 onSendShutdown={handleSendShutdown}
-                onOpenMaintenance={setMaintenanceKiosk}
-                onOpenDetail={setDetailKiosk}
+                onOpenMaintenance={setMaintenanceDevice}
+                onOpenDetail={setDetailDevice}
               />
             ))}
           </div>
         ) : (
           /* Table List View */
-          <KioskTableView
-            kiosks={filteredKiosks}
+          <DeviceTableView
+            devices={filteredDevices}
+            onSendReload={handleReloadApp}
+            onSendLockDevice={handleLockDevice}
+            onSendUnlockDevice={handleUnlockDevice}
             onSendRestart={handleSendRestart}
             onSendShutdown={handleSendShutdown}
-            onOpenMaintenance={setMaintenanceKiosk}
-            onOpenDetail={setDetailKiosk}
+            onOpenMaintenance={setMaintenanceDevice}
+            onOpenDetail={setDetailDevice}
           />
         )}
       </main>
 
       {/* Modals & Drawers */}
       <MaintenanceModal
-        kiosk={maintenanceKiosk}
-        isOpen={Boolean(maintenanceKiosk)}
-        onClose={() => setMaintenanceKiosk(null)}
+        device={maintenanceDevice}
+        isOpen={Boolean(maintenanceDevice)}
+        onClose={() => setMaintenanceDevice(null)}
         onSave={handleSaveMaintenance}
       />
 
-      <KioskDetailModal
-        kiosk={detailKiosk}
-        isOpen={Boolean(detailKiosk)}
-        onClose={() => setDetailKiosk(null)}
+      <DeviceDetailModal
+        device={detailDevice}
+        isOpen={Boolean(detailDevice)}
+        onClose={() => setDetailDevice(null)}
         onUpdateUrl={handleUpdateUrl}
-        onUpdateDetails={handleUpdateKioskDetails}
+        onUpdateDetails={handleUpdateDeviceDetails}
+        onSendReload={handleReloadApp}
+        onSendLockDevice={handleLockDevice}
+        onSendUnlockDevice={handleUnlockDevice}
         onSendRestart={handleSendRestart}
         onSendShutdown={handleSendShutdown}
-        onOpenMaintenance={(k) => {
-          setDetailKiosk(null);
-          setMaintenanceKiosk(k);
+        onOpenMaintenance={(d) => {
+          setDetailDevice(null);
+          setMaintenanceDevice(d);
         }}
       />
 
@@ -491,10 +569,10 @@ export default function KioskDashboardPage() {
         onAckCommand={handleAckCommand}
       />
 
-      <RegisterKioskModal
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        onRegister={handleRegisterKiosk}
+      <EnrollDeviceModal
+        isOpen={isEnrollOpen}
+        onClose={() => setIsEnrollOpen(false)}
+        onEnroll={handleEnrollDevice}
       />
     </div>
   );

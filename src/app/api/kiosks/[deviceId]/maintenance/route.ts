@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -13,7 +18,7 @@ export async function PATCH(
     const { enabled, message } = body;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -23,7 +28,7 @@ export async function PATCH(
     }
 
     if (typeof enabled !== 'boolean') {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'enabled boolean field is required',
@@ -34,13 +39,13 @@ export async function PATCH(
 
     const result = await kioskService.setMaintenanceMode(deviceId, enabled, message);
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: result,
     });
   } catch (error) {
     console.error('Error updating maintenance mode:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to update maintenance mode',

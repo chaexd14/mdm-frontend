@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Kiosk } from '@/lib/types';
+import { Device, Kiosk } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -16,38 +16,41 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 
 interface MaintenanceModalProps {
-  kiosk: Kiosk | null;
+  device?: Device | null;
+  kiosk?: Device | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (deviceId: string, enabled: boolean, message?: string) => Promise<void>;
 }
 
 export function MaintenanceModal({
-  kiosk,
+  device: deviceProp,
+  kiosk: kioskProp,
   isOpen,
   onClose,
   onSave,
 }: MaintenanceModalProps) {
-  const [enabled, setEnabled] = useState(kiosk?.maintenanceMode ?? false);
+  const device = deviceProp || kioskProp;
+  const [enabled, setEnabled] = useState(device?.maintenanceMode ?? false);
   const [message, setMessage] = useState(
-    kiosk?.maintenanceMessage || 'This kiosk is temporarily unavailable.'
+    device?.maintenanceMessage || 'This device is temporarily undergoing maintenance.'
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (kiosk) {
-      setEnabled(kiosk.maintenanceMode);
-      setMessage(kiosk.maintenanceMessage || 'This kiosk is temporarily unavailable.');
+    if (device) {
+      setEnabled(device.maintenanceMode);
+      setMessage(device.maintenanceMessage || 'This device is temporarily undergoing maintenance.');
     }
-  }, [kiosk]);
+  }, [device]);
 
-  if (!kiosk) return null;
+  if (!device) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onSave(kiosk.deviceId, enabled, enabled ? message : undefined);
+      await onSave(device.deviceId, enabled, enabled ? message : undefined);
       onClose();
     } catch (err) {
       console.error(err);
@@ -63,10 +66,10 @@ export function MaintenanceModal({
         <DialogHeader className="pb-3 border-b border-border">
           <div>
             <DialogTitle className="text-base font-semibold text-foreground">
-              Maintenance Mode Settings
+              Device Maintenance Settings
             </DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-              Target: <span className="font-mono">{kiosk.deviceId}</span> ({kiosk.name})
+              Target: <span className="font-mono">{device.deviceId}</span> ({device.name})
             </DialogDescription>
           </div>
         </DialogHeader>
@@ -80,7 +83,7 @@ export function MaintenanceModal({
                 Enable Maintenance Mode
               </p>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Block customer interactions and display maintenance banner
+                Block user interactions and display device maintenance banner
               </p>
             </div>
             <Switch
@@ -99,11 +102,11 @@ export function MaintenanceModal({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 rows={3}
-                placeholder="e.g. This kiosk is temporarily unavailable. Please visit counter 2."
+                placeholder="e.g. This device is temporarily unavailable for scheduled maintenance."
                 className="text-xs"
               />
               <p className="text-[11px] text-muted-foreground">
-                Tablet will poll this notice on its next heartbeat or config check.
+                Device will poll this notice on its next heartbeat or config check.
               </p>
 
               {/* Live Preview Box */}
@@ -112,7 +115,7 @@ export function MaintenanceModal({
                   Under Maintenance
                 </h4>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {message || 'This kiosk is temporarily unavailable.'}
+                  {message || 'This device is temporarily undergoing maintenance.'}
                 </p>
               </div>
             </div>

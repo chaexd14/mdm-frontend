@@ -1,15 +1,36 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { deviceId, deviceName, name, os, agentVersion, appVersion, location } = body;
+    const {
+      deviceId,
+      deviceName,
+      name,
+      os,
+      agentVersion,
+      appVersion,
+      location,
+      url,
+      kioskUrl,
+      batteryLevel,
+      isCharging,
+      isDeviceOwner,
+      lockTaskState,
+      model,
+      manufacturer,
+    } = body;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -26,15 +47,23 @@ export async function POST(request: NextRequest) {
       agentVersion,
       appVersion,
       location,
+      url,
+      kioskUrl,
+      batteryLevel,
+      isCharging,
+      isDeviceOwner,
+      lockTaskState,
+      model,
+      manufacturer,
     });
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: result,
     });
   } catch (error) {
     console.error('Error registering kiosk:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to register kiosk',

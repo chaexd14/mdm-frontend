@@ -1,7 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { kioskService } from '@/lib/kioskService';
+import { handleOptions, jsonWithCors } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
+
+export async function OPTIONS() {
+  return handleOptions();
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -13,7 +18,7 @@ export async function PATCH(
     const targetUrl = body.kioskUrl || body.url;
 
     if (!deviceId) {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'deviceId is required',
@@ -23,7 +28,7 @@ export async function PATCH(
     }
 
     if (!targetUrl || typeof targetUrl !== 'string') {
-      return NextResponse.json(
+      return jsonWithCors(
         {
           success: false,
           error: 'kioskUrl or url string field is required',
@@ -34,7 +39,7 @@ export async function PATCH(
 
     const result = await kioskService.updateKioskUrl(deviceId, targetUrl);
 
-    return NextResponse.json({
+    return jsonWithCors({
       success: true,
       data: {
         deviceId: result.deviceId,
@@ -44,7 +49,7 @@ export async function PATCH(
     });
   } catch (error) {
     console.error('Error updating kiosk url:', error);
-    return NextResponse.json(
+    return jsonWithCors(
       {
         success: false,
         error: 'Failed to update kiosk url',
@@ -53,4 +58,3 @@ export async function PATCH(
     );
   }
 }
-

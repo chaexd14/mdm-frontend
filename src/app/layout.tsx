@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Kiosk Fleet Management Dashboard & C# Agent Controller",
-  description: "Centralized real-time telemetry, remote commands, maintenance mode control, and fleet management for tablet kiosks.",
+  title: "SaikoTech Android MDM - Fleet Management & Live Monitoring",
+  description: "Centralized real-time telemetry, remote commands, lock task control, and fleet management for Android MDM devices.",
 };
 
 export default function RootLayout({

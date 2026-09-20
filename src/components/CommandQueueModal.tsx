@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { KioskCommand } from '@/lib/types';
+import { DeviceCommand, KioskCommand } from '@/lib/types';
 import {
   Dialog,
   DialogContent,
@@ -27,14 +27,17 @@ export function CommandQueueModal({
   onClose,
   onAckCommand,
 }: CommandQueueModalProps) {
-  const [commands, setCommands] = useState<KioskCommand[]>([]);
+  const [commands, setCommands] = useState<DeviceCommand[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'executed'>('all');
 
   const fetchCommands = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/kiosks/commands');
+      let res = await fetch('/api/devices/commands');
+      if (!res.ok) {
+        res = await fetch('/api/kiosks/commands');
+      }
       const data = await res.json();
       if (data.success && data.data?.commands) {
         setCommands(data.data.commands);
@@ -71,7 +74,7 @@ export function CommandQueueModal({
                 Remote Commands & Queue
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                Track pending and executed Windows agent commands
+                Track pending and executed Android MDM device commands
               </DialogDescription>
             </div>
             <Button
@@ -123,13 +126,19 @@ export function CommandQueueModal({
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-foreground capitalize">
+                    <span className="text-xs font-medium text-foreground uppercase">
                       {cmd.type}
                     </span>
                     <code className="text-[11px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                       {cmd.deviceId}
                     </code>
                   </div>
+
+                  {cmd.payload && Object.keys(cmd.payload).length > 0 && (
+                    <div className="text-[10px] font-mono text-muted-foreground truncate max-w-xs mt-0.5">
+                      {JSON.stringify(cmd.payload)}
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono mt-0.5">
                     <span>ID: {cmd.id}</span>

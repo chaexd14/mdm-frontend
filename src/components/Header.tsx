@@ -11,7 +11,8 @@ interface HeaderProps {
   isLoading: boolean;
   autoRefreshInterval: number;
   setAutoRefreshInterval: (interval: number) => void;
-  onOpenRegister: () => void;
+  onOpenRegister?: () => void;
+  onOpenEnroll?: () => void;
   onOpenCommandQueue: () => void;
   pendingCommandsCount: number;
   lastUpdated: Date | null;
@@ -23,6 +24,7 @@ export function Header({
   autoRefreshInterval,
   setAutoRefreshInterval,
   onOpenRegister,
+  onOpenEnroll,
   onOpenCommandQueue,
   pendingCommandsCount,
 }: HeaderProps) {
@@ -32,10 +34,10 @@ export function Header({
         {/* Brand Title */}
         <div>
           <h1 className="text-base font-semibold tracking-tight text-foreground">
-            Kiosk Dashboard
+            SaikoTech Android MDM
           </h1>
           <p className="text-xs text-muted-foreground">
-            Fleet Telemetry & Remote Control
+            Device Fleet Management & Live Monitoring
           </p>
         </div>
 
@@ -81,7 +83,7 @@ export function Header({
             onClick={onRefresh}
             disabled={isLoading}
             className="h-8 gap-1.5"
-            title="Refresh kiosk statuses and telemetry"
+            title="Refresh device statuses and telemetry"
           >
             <RefreshCw
               data-icon="inline-start"
@@ -109,14 +111,14 @@ export function Header({
             )}
           </Button>
 
-          {/* Register Kiosk Button */}
+          {/* Register / Enroll Device Button */}
           <Button
             variant="default"
             size="sm"
-            onClick={onOpenRegister}
+            onClick={onOpenEnroll || onOpenRegister}
             className="h-8"
           >
-            <span>Add Tablet</span>
+            <span>Enroll Device</span>
           </Button>
         </div>
       </div>
