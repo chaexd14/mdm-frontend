@@ -1,13 +1,10 @@
 const API_ORIGIN = (process.env.NEXT_PUBLIC_MDM_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
-let accessToken = '';
-export function setAccessToken(token: string) { accessToken = token; }
 export function apiUrl(path: string) { return API_ORIGIN + (path.startsWith('/') ? path : '/' + path); }
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const headers = new Headers(options.headers);
-  if (accessToken) headers.set('Authorization', 'Bearer ' + accessToken);
   if (options.method === 'POST' && /\/commands$/.test(path) && !headers.has('Idempotency-Key')) headers.set('Idempotency-Key', crypto.randomUUID());
-  const res = await fetch(apiUrl(path), { ...options, headers, cache: 'no-store', signal: options.signal || AbortSignal.timeout(15000) });
-  if (res.status === 401 && path !== '/api/auth') window.dispatchEvent(new Event('mdm-auth-required'));
+  const res = await fetch(apiUrl(path), { ...options, headers, credentials: 'include', cache: 'no-store', signal: options.signal || AbortSignal.timeout(15000) });
+  if (res.status === 401 && !path.startsWith('/api/auth')) window.dispatchEvent(new Event('mdm-auth-required'));
   return res;
 }
 
