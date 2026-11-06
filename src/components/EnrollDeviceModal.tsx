@@ -109,7 +109,7 @@ export function EnrollDeviceModal({
                 type="text"
                 value={deviceId}
                 onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="e.g. KIOSK-AND-002"
+                placeholder="e.g. MDM-AND-002"
                 className="font-mono uppercase"
                 required
               />
