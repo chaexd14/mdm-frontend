@@ -5,6 +5,9 @@ export type KioskStatus = DeviceStatus;
 export interface Device {
   id: string;
   deviceId: string;
+  revision?: number;
+  webHealth?: { sessionId?: string; state?: 'loading' | 'loaded' | 'ready' | 'error' | 'renderer_crashed'; loadedUrl?: string | null; lastLoadedAt?: string | null; loadDurationMs?: number | null; firstContentfulPaintMs?: number | null; rendererCrashCount?: number; error?: string | null };
+  journalPersistencePending?: boolean;
   name: string;
   location: string;
   os: string;
@@ -20,6 +23,10 @@ export interface Device {
   allowTransactions: boolean;
   theme: string;
   status: DeviceStatus;
+  connectionQuality?: 'healthy' | 'stale' | 'offline';
+  configVersion?: number;
+  appliedConfigVersion?: number;
+  currentUrl?: string;
   // Android MDM Telemetry
   batteryLevel?: number;
   isCharging?: boolean;
@@ -64,7 +71,11 @@ export interface DeviceCommand {
   kioskId?: string;
   type: string;
   payload?: Record<string, unknown>;
-  status: 'pending' | 'executed' | 'failed' | 'cancelled';
+  status: 'pending' | 'received' | 'executed' | 'failed' | 'cancelled' | 'expired';
+  expiresAt?: string;
+  receivedAt?: string;
+  error?: string;
+  deliveryAttempts?: number;
   createdAt: string;
   executedAt: string | null;
 }

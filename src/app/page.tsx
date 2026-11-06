@@ -1,6 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { mergeSnapshot, mergeEvents, type DeviceEvent, type Tombstone } from '@/lib/reconciliation';
+import { apiFetch, subscribeEvents } from '@/lib/api';
+
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Search,
   LayoutGrid,
@@ -8,8 +11,8 @@ import {
   Monitor,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Device, DeviceCommand } from '@/lib/types';
-import { supabase } from '@/lib/supabase';
+import { Device } from '@/lib/types';
+import { AppReleasesPanel } from '@/components/AppReleasesPanel';
 import { Header } from '@/components/Header';
 import { StatsOverview } from '@/components/StatsOverview';
 import { DeviceCard } from '@/components/DeviceCard';
@@ -31,11 +34,26 @@ import {
 } from '@/components/ui/select';
 
 export default function DeviceDashboardPage() {
+  const [releasesOpen, setReleasesOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(5); // default 5s
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(60); // Periodic reconciliation; SSE supplies immediate updates
   const [pendingCommandsCount, setPendingCommandsCount] = useState<number>(0);
+
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [streamConnected, setStreamConnected] = useState(false);
+  const [enrollment, setEnrollment] = useState<{ code: string; expiresAt: string; deviceId: string } | null>(null);
+  const devicesRevision = useRef(0);
+  const deletedAt = useRef(new Map<string, Tombstone>());
+  const changedAt = useRef(new Map<string, number>());
+  const [fleetPage, setFleetPage] = useState(1);
+  const knownDevices = useRef(new Map<string, string>());
+  useEffect(() => { knownDevices.current = new Map(devices.map(device => [device.deviceId, device.id])); }, [devices]);
+  const devicesFetchInFlight = useRef(false);
+  const lastSnapshotRepair = useRef(0);
+  const devicesRequest = useRef(0);
+  const countRequest = useRef(0);
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -52,34 +70,38 @@ export default function DeviceDashboardPage() {
   // Fetch all devices
   const fetchDevices = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
+    if (devicesFetchInFlight.current) return;
+    devicesFetchInFlight.current = true;
+    const request = ++devicesRequest.current;
+    const revision = devicesRevision.current;
+    if (showLoading) setIsLoading(true);
     try {
-      let res = await fetch('/api/devices');
-      if (!res.ok) {
-        res = await fetch('/api/kiosks');
-      }
+      let res = await apiFetch('/api/devices');
       const data = await res.json();
-      if (data.success && (data.data?.devices || data.data?.kiosks)) {
-        setDevices(data.data.devices || data.data.kiosks);
+      if (!res.ok || !data.success) throw new Error('Device list refresh failed');
+      if (data.data?.devices || data.data?.kiosks) {
+        setSyncError(null);
+        if (request !== devicesRequest.current) return;
+        setDevices(previous => mergeSnapshot(previous, data.data.devices || data.data.kiosks, changedAt.current, revision, deletedAt.current));
         setLastUpdated(new Date());
       }
     } catch (err) {
+      setSyncError('The device list could not be refreshed. Live updates may be incomplete.');
       console.error('Failed to load devices:', err);
     } finally {
+      devicesFetchInFlight.current = false;
       setIsLoading(false);
     }
   }, []);
 
   // Fetch pending commands count
   const fetchCommandsCount = useCallback(async () => {
+    const request = ++countRequest.current;
     try {
-      let res = await fetch('/api/devices/commands');
-      if (!res.ok) {
-        res = await fetch('/api/kiosks/commands');
-      }
+      let res = await apiFetch('/api/devices/commands/summary');
       const data = await res.json();
-      if (data.success && data.data?.commands) {
-        const pending = data.data.commands.filter((c: DeviceCommand) => c.status === 'pending').length;
-        setPendingCommandsCount(pending);
+      if (data.success && typeof data.data?.pendingCount === 'number') {
+        if (request === countRequest.current) setPendingCommandsCount(data.data.pendingCount ?? 0);
       }
     } catch {
       // ignore
@@ -97,84 +119,74 @@ export default function DeviceDashboardPage() {
     fetchCommandsCount();
   }, [fetchDevices, fetchCommandsCount]);
 
-  // Real-time Supabase DB change subscription (<50ms latency)
-  useEffect(() => {
-    const channel = supabase
-      .channel('kiosks-realtime-channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kiosks' }, () => {
-        fetchDevices(false);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kiosk_commands' }, () => {
-        fetchCommandsCount();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchDevices, fetchCommandsCount]);
-
   // Real-time Server-Sent Events (SSE) Stream for Instant Sub-second In-Memory Reactivity
   useEffect(() => {
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource('/api/devices/events');
-      
-      eventSource.addEventListener('device_updated', (e) => {
-        try {
-          const parsed = JSON.parse(e.data);
-          const device: Device = parsed.device;
-          if (device && device.deviceId) {
-            setDevices((prev) => {
-              const idx = prev.findIndex((d) => d.deviceId === device.deviceId);
-              if (idx >= 0) {
-                const copy = [...prev];
-                copy[idx] = { ...copy[idx], ...device };
-                return copy;
-              }
-              return [device, ...prev];
-            });
-            setLastUpdated(new Date());
-          }
-        } catch {}
-      });
-
-      eventSource.addEventListener('device_deleted', (e) => {
-        try {
-          const parsed = JSON.parse(e.data);
-          const deviceId: string = parsed.deviceId;
-          if (deviceId) {
-            setDevices((prev) => prev.filter((d) => d.deviceId !== deviceId));
-            setLastUpdated(new Date());
-          }
-        } catch {}
-      });
-
-      eventSource.addEventListener('command_created', () => {
-        fetchCommandsCount();
-      });
-
-      eventSource.addEventListener('command_updated', () => {
-        fetchCommandsCount();
-      });
-    } catch {}
-
-    return () => {
-      if (eventSource) eventSource.close();
+    const pending = new Map<string, DeviceEvent>();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let commandsChanged = false;
+    let needsSnapshot = false;
+    const flush = () => {
+      timer = null;
+      if (pending.size) { const batch = [...pending.values()]; pending.clear(); setDevices(previous => mergeEvents(previous, batch)); setLastUpdated(new Date()); }
+      if (needsSnapshot) { needsSnapshot = false; if (Date.now() - lastSnapshotRepair.current >= 5000) { lastSnapshotRepair.current = Date.now(); refreshAll(); } }
+      if (commandsChanged) { commandsChanged = false; fetchCommandsCount(); }
     };
-  }, [fetchCommandsCount]);
+    const stream = subscribeEvents((type, raw) => {
+      try {
+        const data = JSON.parse(raw);
+        if (type === 'connected') refreshAll();
+        if ((type === 'device_updated' || type === 'device_telemetry') && data.device?.deviceId) {
+          const id: string = data.device.deviceId;
+          if (type === 'device_telemetry' && (!knownDevices.current.has(id) || (data.device.id && knownDevices.current.get(id) !== data.device.id))) needsSnapshot = true;
+          if (type === 'device_updated') deletedAt.current.delete(id);
+          changedAt.current.set(id, ++devicesRevision.current);
+          const queued = pending.get(id);
+          if (!queued?.device || (data.device.revision ?? 0) >= (queued.device.revision ?? 0)) {
+            pending.set(id, { deviceId: id, device: { ...queued?.device, ...data.device }, partial: type === 'device_telemetry' && queued?.partial !== false });
+          }
+          // A telemetry patch cannot construct a full device; snapshots repair unknown IDs.
+        }
+        if (type === 'device_deleted' && data.deviceId) {
+          changedAt.current.set(data.deviceId, ++devicesRevision.current);
+          deletedAt.current.set(data.deviceId, { sequence: devicesRevision.current, id: data.id });
+          pending.set(data.deviceId, { deviceId: data.deviceId, deletedId: data.id });
+        }
+        if (type === 'command_created' || type === 'command_updated') commandsChanged = true;
+        if (!timer && (pending.size || commandsChanged)) timer = setTimeout(flush, 100);
+      } catch { /* Periodic snapshots reconcile missed or invalid events. */ }
+    }, setStreamConnected);
+    return () => { stream.close(); if (timer) clearTimeout(timer); };
+  }, [fetchCommandsCount, refreshAll]);
 
   // Auto refresh fallback timer
   useEffect(() => {
-    if (autoRefreshInterval <= 0) return;
-    const interval = setInterval(refreshAll, autoRefreshInterval * 1000);
+    if (autoRefreshInterval <= 0 && streamConnected) return;
+    const interval = setInterval(refreshAll, (streamConnected ? Math.max(60, autoRefreshInterval) : Math.max(5, Math.min(10, autoRefreshInterval))) * 1000);
     return () => clearInterval(interval);
-  }, [autoRefreshInterval, refreshAll]);
+  }, [autoRefreshInterval, refreshAll, streamConnected]);
+
+  // Recompute presence even if a disconnected device emits no more events.
+  useEffect(() => {
+    const timer = setInterval(() => setDevices(previous => previous.map(device => {
+      const age = Date.now() - Date.parse(device.lastSeen);
+      const status = age < 120000 ? 'online' : 'offline';
+      const connectionQuality = !device.lastSeen || age >= 120000 ? 'offline' : age >= 60000 ? 'stale' : 'healthy';
+      return device.status === status && device.connectionQuality === connectionQuality ? device : { ...device, status, connectionQuality };
+    })), 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const createEnrollment = async (deviceId: string) => {
+    const res = await apiFetch('/api/devices/' + encodeURIComponent(deviceId) + '/enrollment', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || 'Could not issue enrollment code');
+    setEnrollment({ code: data.data.enrollmentCode, expiresAt: data.data.expiresAt, deviceId });
+  };
 
   // Android MDM Actions
-  const handleReloadApp = async (deviceId: string) => {
+  const handleReloadApp = useCallback(async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'reload' }),
@@ -191,11 +203,11 @@ export default function DeviceDashboardPage() {
     } catch (err: any) {
       toast.error('Network Error', { description: err.message });
     }
-  };
+  }, [refreshAll]);
 
-  const handleLockDevice = async (deviceId: string) => {
+  const handleLockDevice = useCallback(async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'lock_kiosk' }),
@@ -212,11 +224,11 @@ export default function DeviceDashboardPage() {
     } catch (err: any) {
       toast.error('Network Error', { description: err.message });
     }
-  };
+  }, [refreshAll]);
 
-  const handleUnlockDevice = async (deviceId: string) => {
+  const handleUnlockDevice = useCallback(async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'unlock_kiosk' }),
@@ -233,11 +245,11 @@ export default function DeviceDashboardPage() {
     } catch (err: any) {
       toast.error('Network Error', { description: err.message });
     }
-  };
+  }, [refreshAll]);
 
-  const handleSendRestart = async (deviceId: string) => {
+  const handleSendRestart = useCallback(async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}/commands`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}/commands`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'restart' }),
@@ -254,101 +266,35 @@ export default function DeviceDashboardPage() {
     } catch (err: any) {
       toast.error('Network Error', { description: err.message });
     }
-  };
-
-  const handleSendShutdown = async (deviceId: string) => {
-    try {
-      const res = await fetch(`/api/devices/${deviceId}/commands`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'shutdown' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        toast.info('Shutdown Command Queued', {
-          description: `Dispatched shutdown to ${deviceId}.`,
-        });
-        refreshAll();
-      } else {
-        toast.error('Failed to Queue Command', { description: data.error });
-      }
-    } catch (err: any) {
-      toast.error('Network Error', { description: err.message });
-    }
-  };
+  }, [refreshAll]);
 
   const handleSaveMaintenance = async (deviceId: string, enabled: boolean, message?: string) => {
-    // Optimistic state update
-    setDevices((prev) =>
-      prev.map((d) =>
-        d.deviceId === deviceId
-          ? { ...d, maintenanceMode: enabled, maintenanceMessage: enabled ? (message || null) : null }
-          : d
-      )
-    );
-    if (detailDevice && detailDevice.deviceId === deviceId) {
-      setDetailDevice((prev) =>
-        prev
-          ? { ...prev, maintenanceMode: enabled, maintenanceMessage: enabled ? (message || null) : null }
-          : null
-      );
-    }
-
     try {
-      const res = await fetch(`/api/devices/${deviceId}/maintenance`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, message }),
+      const res = await apiFetch('/api/devices/' + encodeURIComponent(deviceId) + '/maintenance', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, message }),
       });
       const data = await res.json();
-      if (data.success) {
-        toast.success(
-          enabled ? 'Maintenance Mode Enabled' : 'Maintenance Mode Disabled',
-          {
-            description: `Device ${deviceId} is now ${enabled ? 'displaying maintenance banner' : 'in active service'}.`,
-          }
-        );
-        refreshAll();
-      } else {
-        toast.error('Update Failed', { description: data.error });
-      }
-    } catch (err: any) {
-      toast.error('Network Error', { description: err.message });
+      if (!res.ok || !data.success) throw new Error(data.error || 'Configuration update failed');
+      toast.success('Maintenance configuration saved', { description: 'Waiting for device confirmation.' });
+      refreshAll();
+    } catch (error) {
+      toast.error('Configuration update failed', { description: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   };
 
   const handleUpdateUrl = async (deviceId: string, url: string) => {
-    // Optimistic state update
-    setDevices((prev) =>
-      prev.map((d) =>
-        d.deviceId === deviceId
-          ? { ...d, url, targetUrl: url, kioskUrl: url }
-          : d
-      )
-    );
-    if (detailDevice && detailDevice.deviceId === deviceId) {
-      setDetailDevice((prev) =>
-        prev ? { ...prev, url, targetUrl: url, kioskUrl: url } : null
-      );
-    }
-
     try {
-      const res = await fetch(`/api/devices/${deviceId}/url`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, targetUrl: url }),
+      const res = await apiFetch('/api/devices/' + encodeURIComponent(deviceId) + '/url', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ targetUrl: url }),
       });
       const data = await res.json();
-      if (data.success) {
-        toast.success('Managed App URL Updated', {
-          description: `Device ${deviceId} set to load ${url}`,
-        });
-        refreshAll();
-      } else {
-        toast.error('Update URL Failed', { description: data.error });
-      }
-    } catch (err: any) {
-      toast.error('Network Error', { description: err.message });
+      if (!res.ok || !data.success) throw new Error(data.error || 'URL update failed');
+      toast.success('URL configuration saved', { description: 'Waiting for device confirmation.' });
+      refreshAll();
+    } catch (error) {
+      toast.error('URL update failed', { description: error instanceof Error ? error.message : String(error) });
+      throw error;
     }
   };
 
@@ -357,7 +303,7 @@ export default function DeviceDashboardPage() {
     updateData: { name?: string; newDeviceId?: string; location?: string; os?: string }
   ) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updateData),
@@ -389,14 +335,15 @@ export default function DeviceDashboardPage() {
     targetUrl?: string;
   }) => {
     try {
-      const res = await fetch('/api/devices/register', {
+      const res = await apiFetch('/api/devices/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('Device Enrolled Successfully', {
+        await createEnrollment(formData.deviceId);
+        toast.success('Device Registered Successfully', {
           description: `${formData.deviceId} added to MDM fleet.`,
         });
         refreshAll();
@@ -410,26 +357,26 @@ export default function DeviceDashboardPage() {
 
   const handleAckCommand = async (deviceId: string, commandId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}/commands/${commandId}/ack`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}/commands/${encodeURIComponent(commandId)}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'executed' }),
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (data.success) {
-        toast.success('Command Acknowledged', {
-          description: `Command ${commandId} marked as executed.`,
+        toast.success('Command Cancelled', {
+          description: `Command ${encodeURIComponent(commandId)} cancelled before delivery.`,
         });
         refreshAll();
-      }
+      } else { toast.error('Cancellation failed', { description: data.error }); }
     } catch (err: any) {
-      toast.error('Ack Error', { description: err.message });
+      toast.error('Cancellation failed', { description: err.message });
     }
   };
 
   const handleDeleteDevice = async (deviceId: string) => {
     try {
-      const res = await fetch(`/api/devices/${deviceId}`, {
+      const res = await apiFetch(`/api/devices/${encodeURIComponent(deviceId)}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -452,7 +399,7 @@ export default function DeviceDashboardPage() {
   const locations = ['all', ...Array.from(new Set(devices.map((k) => k.location || 'Manila')))];
 
   // Filtered devices
-  const filteredDevices = devices.filter((k) => {
+  const filteredDevices = useMemo(() => devices.filter((k) => {
     // Search query
     const matchSearch =
       !searchQuery ||
@@ -472,10 +419,16 @@ export default function DeviceDashboardPage() {
     if (selectedLocation !== 'all') matchLocation = k.location === selectedLocation;
 
     return matchSearch && matchStatus && matchLocation;
-  });
+  }), [devices, searchQuery, selectedStatusFilter, selectedLocation]);
+  const pageCount = Math.max(1, Math.ceil(filteredDevices.length / 48));
+  const activePage = Math.min(fleetPage, pageCount);
+  const visibleDevices = filteredDevices.slice((activePage - 1) * 48, activePage * 48);
+  useEffect(() => { setFleetPage(1); }, [searchQuery, selectedStatusFilter, selectedLocation]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-primary-foreground pb-16">
+      {syncError && <p role="alert" className="px-6 py-3 text-sm text-destructive">{syncError}</p>}
+      <div className="px-6 pt-3 flex justify-end"><Button variant="outline" onClick={() => setReleasesOpen(true)}>App software updates</Button></div>
       {/* Header Bar */}
       <Header
         onRefresh={() => fetchDevices(true)}
@@ -598,10 +551,15 @@ export default function DeviceDashboardPage() {
           </div>
 
           <span className="text-[11px] text-muted-foreground">
-            Online threshold: &lt;7m heartbeat
+            {streamConnected ? 'Live updates connected' : 'Reconnecting live updates'} · Offline after 2m without telemetry
           </span>
         </div>
 
+        {enrollment && <div role="status" className="border rounded p-4 my-4 space-y-2">
+          <p>Enrollment code for {enrollment.deviceId}. Enter it in the device admin screen before {new Date(enrollment.expiresAt).toLocaleTimeString()}.</p>
+          <code className="break-all select-all">{enrollment.code}</code>
+          <button className="ml-4 underline" onClick={() => setEnrollment(null)}>Dismiss</button>
+        </div>}
         {/* Main Content Area: Grid View or Table View */}
         {filteredDevices.length === 0 ? (
           <Card className="p-12 text-center my-6 bg-card/40 border-dashed">
@@ -628,7 +586,7 @@ export default function DeviceDashboardPage() {
         ) : viewMode === 'grid' ? (
           /* Device Cards Grid */
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredDevices.map((device) => (
+            {visibleDevices.map((device) => (
               <DeviceCard
                 key={device.deviceId}
                 device={device}
@@ -636,7 +594,6 @@ export default function DeviceDashboardPage() {
                 onSendLockDevice={handleLockDevice}
                 onSendUnlockDevice={handleUnlockDevice}
                 onSendRestart={handleSendRestart}
-                onSendShutdown={handleSendShutdown}
                 onOpenMaintenance={setMaintenanceDevice}
                 onOpenDetail={setDetailDevice}
               />
@@ -645,18 +602,23 @@ export default function DeviceDashboardPage() {
         ) : (
           /* Table List View */
           <DeviceTableView
-            devices={filteredDevices}
+            devices={visibleDevices}
             onSendReload={handleReloadApp}
             onSendLockDevice={handleLockDevice}
             onSendUnlockDevice={handleUnlockDevice}
             onSendRestart={handleSendRestart}
-            onSendShutdown={handleSendShutdown}
             onOpenMaintenance={setMaintenanceDevice}
             onOpenDetail={setDetailDevice}
           />
         )}
+        {pageCount > 1 && <nav aria-label="Fleet pages" className="flex justify-center items-center gap-4 py-6">
+          <Button variant="outline" disabled={activePage <= 1} onClick={() => setFleetPage(activePage - 1)}>Previous</Button>
+          <span>{activePage} / {pageCount} · up to 48 devices per page</span>
+          <Button variant="outline" disabled={activePage >= pageCount} onClick={() => setFleetPage(activePage + 1)}>Next</Button>
+        </nav>}
       </main>
 
+      <AppReleasesPanel open={releasesOpen} onClose={() => setReleasesOpen(false)} devices={devices} />
       {/* Modals & Drawers */}
       <MaintenanceModal
         device={maintenanceDevice}
@@ -666,7 +628,7 @@ export default function DeviceDashboardPage() {
       />
 
       <DeviceDetailModal
-        device={detailDevice}
+        device={devices.find(device => device.deviceId === detailDevice?.deviceId) || detailDevice}
         isOpen={Boolean(detailDevice)}
         onClose={() => setDetailDevice(null)}
         onUpdateUrl={handleUpdateUrl}
@@ -675,12 +637,12 @@ export default function DeviceDashboardPage() {
         onSendLockDevice={handleLockDevice}
         onSendUnlockDevice={handleUnlockDevice}
         onSendRestart={handleSendRestart}
-        onSendShutdown={handleSendShutdown}
         onOpenMaintenance={(d) => {
           setDetailDevice(null);
           setMaintenanceDevice(d);
         }}
         onDeleteDevice={handleDeleteDevice}
+        onIssueEnrollment={async deviceId => { await createEnrollment(deviceId); setDetailDevice(null); }}
       />
 
       <CommandQueueModal

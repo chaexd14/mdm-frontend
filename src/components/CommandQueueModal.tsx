@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch } from '@/lib/api';
+
 import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { DeviceCommand, KioskCommand } from '@/lib/types';
@@ -27,6 +29,8 @@ export function CommandQueueModal({
   onClose,
   onAckCommand,
 }: CommandQueueModalProps) {
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [commands, setCommands] = useState<DeviceCommand[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [filter, setFilter] = useState<'all' | 'pending' | 'executed'>('all');
@@ -34,13 +38,11 @@ export function CommandQueueModal({
   const fetchCommands = async () => {
     setIsLoading(true);
     try {
-      let res = await fetch('/api/devices/commands');
-      if (!res.ok) {
-        res = await fetch('/api/kiosks/commands');
-      }
+      let res = await apiFetch('/api/devices/commands?page=' + page);
       const data = await res.json();
       if (data.success && data.data?.commands) {
         setCommands(data.data.commands);
+        setTotalCount(data.data.totalCount ?? data.data.commands.length);
       }
     } catch (err) {
       console.error('Failed to load commands:', err);
@@ -55,10 +57,10 @@ export function CommandQueueModal({
       const interval = setInterval(fetchCommands, 3000);
       return () => clearInterval(interval);
     }
-  }, [isOpen]);
+  }, [isOpen, page]);
 
   const filteredCommands = commands.filter((c) => {
-    if (filter === 'pending') return c.status === 'pending';
+    if (filter === 'pending') return c.status === 'pending' || c.status === 'received';
     if (filter === 'executed') return c.status === 'executed';
     return true;
   });
@@ -74,7 +76,7 @@ export function CommandQueueModal({
                 Remote Commands & Queue
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                Track pending and executed Android MDM device commands
+                Track device-confirmed results. Cancellation is available only before delivery.
               </DialogDescription>
             </div>
             <Button
@@ -124,7 +126,7 @@ export function CommandQueueModal({
                 fetchCommands();
               }}
             >
-              Acknowledge All Pending ({commands.filter((c) => c.status === 'pending').length})
+              Cancel Undelivered ({commands.filter((c) => c.status === 'pending').length})
             </Button>
           )}
         </div>
@@ -151,6 +153,7 @@ export function CommandQueueModal({
                     </code>
                   </div>
 
+                  {cmd.error && <p className="text-xs text-red-600">{cmd.error}</p>}
                   {cmd.payload && Object.keys(cmd.payload).length > 0 && (
                     <div className="text-[10px] font-mono text-muted-foreground truncate max-w-xs mt-0.5">
                       {JSON.stringify(cmd.payload)}
@@ -182,18 +185,18 @@ export function CommandQueueModal({
                             fetchCommands();
                           }}
                           className="text-[11px]"
-                          title="Acknowledge execution"
+                          title="Cancel before delivery"
                         >
-                          Ack
+                          Cancel
                         </Button>
                       )}
                     </div>
                   ) : (
                     <Badge
                       variant="outline"
-                      className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20 text-xs font-normal"
+                      className={cmd.status === 'executed' ? 'text-emerald-700 text-xs' : 'text-amber-700 text-xs'}
                     >
-                      Executed
+                      {cmd.status}
                     </Badge>
                   )}
                 </div>
@@ -202,6 +205,11 @@ export function CommandQueueModal({
           )}
         </div>
 
+        <div className="flex items-center gap-3 text-xs">
+          <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(value => value - 1)}>Previous</Button>
+          <span>Page {page} · {totalCount} commands</span>
+          <Button variant="outline" size="sm" disabled={page * 50 >= totalCount} onClick={() => setPage(value => value + 1)}>Next</Button>
+        </div>
         {/* Footer */}
         <DialogFooter className="pt-3 border-t border-border">
           <Button variant="outline" size="sm" onClick={onClose}>

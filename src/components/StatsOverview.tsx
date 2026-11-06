@@ -41,7 +41,7 @@ export function StatsOverview({
       id: 'online',
       label: 'Active Online',
       value: onlineCount,
-      subtext: 'Live heartbeat < 7m',
+      subtext: 'Heartbeat within 2m',
       icon: CheckCircle2,
       iconClass: 'text-emerald-600 dark:text-emerald-400',
       badge: total > 0 ? `${Math.round((onlineCount / total) * 100)}%` : undefined,

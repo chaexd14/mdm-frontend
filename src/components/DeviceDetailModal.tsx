@@ -1,5 +1,7 @@
 'use client';
 
+import { apiFetch, apiUrl } from '@/lib/api';
+
 import React, { useState, useEffect } from 'react';
 import {
   RotateCw,
@@ -45,6 +47,7 @@ export interface DeviceDetailModalProps {
   onSendRestart?: (deviceId: string) => void;
   onSendShutdown?: (deviceId: string) => void;
   onOpenMaintenance: (device: Device) => void;
+  onIssueEnrollment?: (deviceId: string) => Promise<void>;
   onDeleteDevice?: (deviceId: string) => Promise<void>;
 }
 
@@ -64,6 +67,7 @@ export function DeviceDetailModal({
   onSendShutdown,
   onOpenMaintenance,
   onDeleteDevice,
+  onIssueEnrollment,
 }: DeviceDetailModalProps) {
   const device = deviceProp || kioskProp;
   const [name, setName] = useState(device?.name || '');
@@ -85,11 +89,11 @@ export function DeviceDetailModal({
       setLocationInput(device.location || 'Manila');
       setUrl(device.targetUrl || device.kioskUrl || device.url || 'https://app.hotel.saikotechsolutions.com/guest-booking/zicarelli');
     }
-  }, [device]);
+  }, [isOpen, device?.deviceId]);
 
   useEffect(() => {
     if (isOpen && device) {
-      fetch(`/api/devices/commands?deviceId=${device.deviceId}`)
+      apiFetch(`/api/devices/commands?deviceId=${encodeURIComponent(device.deviceId)}`)
         .then((r) => r.json())
         .then((data) => {
           if (data.success && data.data?.commands) {
@@ -98,7 +102,7 @@ export function DeviceDetailModal({
         })
         .catch(() => {
           // Fallback to legacy endpoint if needed
-          fetch(`/api/kiosks/commands?deviceId=${device.deviceId}`)
+          apiFetch(`/api/kiosks/commands?deviceId=${encodeURIComponent(device.deviceId)}`)
             .then((r) => r.json())
             .then((data) => {
               if (data.success && data.data?.commands) {
@@ -108,7 +112,7 @@ export function DeviceDetailModal({
             .catch(console.error);
         });
     }
-  }, [isOpen, device]);
+  }, [isOpen, device?.deviceId]);
 
   if (!device) return null;
 
@@ -417,7 +421,7 @@ export function DeviceDetailModal({
 
               <div className="flex items-center justify-between pt-1 text-[11px] text-muted-foreground font-mono">
                 <a
-                  href={`/api/devices/${device.deviceId}/config`}
+                  href={apiUrl(`/api/devices/${encodeURIComponent(device.deviceId)}/config`)}
                   target="_blank"
                   rel="noreferrer"
                   className="text-primary hover:underline"
@@ -436,6 +440,19 @@ export function DeviceDetailModal({
             </form>
           </Card>
 
+          <Card className="p-4 space-y-2 text-xs">
+            <p>Reported URL: {device.currentUrl || 'Awaiting telemetry'}</p>
+            <p>Configuration: {device.appliedConfigVersion === device.configVersion ? 'Applied' : 'Applying'} (desired {device.configVersion ?? '—'}, reported {device.appliedConfigVersion ?? '—'})</p>
+            <p>Connection: {device.connectionQuality || device.status}</p>
+            <p>Web page: {device.webHealth?.state || 'Awaiting browser telemetry'}</p>
+            <p>Last loaded URL: {device.webHealth?.loadedUrl || 'No successful load reported'}</p>
+            <p>Last successful page load: {device.webHealth?.lastLoadedAt ? new Date(device.webHealth.lastLoadedAt).toLocaleString() : '—'}</p>
+            <p>Load time: {device.webHealth?.loadDurationMs == null ? '—' : device.webHealth.loadDurationMs + ' ms'} · First content paint: {device.webHealth?.firstContentfulPaintMs == null ? '—' : device.webHealth.firstContentfulPaintMs + ' ms'}</p>
+            <p>Renderer crashes this session: {device.webHealth?.rendererCrashCount ?? '—'}</p>
+            {device.webHealth?.error && <p role="alert">Browser error: {device.webHealth.error}</p>}
+            {device.journalPersistencePending && <p role="alert">Command result storage needs attention. Execution is paused until results are persisted.</p>}
+            <p className="text-muted-foreground">Loaded confirms browser navigation. Ready requires the web app's optional readiness signal.</p>
+          </Card>
           {/* Recent Commands Audit History */}
           <Card className="p-4 bg-muted/10">
             <h4 className="text-xs font-medium text-foreground mb-2">
@@ -477,13 +494,14 @@ export function DeviceDetailModal({
         </div>
 
         <DialogFooter className="pt-2 border-t border-border flex items-center justify-between sm:justify-between w-full">
+          {onIssueEnrollment && <Button variant="outline" size="sm" onClick={() => onIssueEnrollment(device.deviceId).catch(error => window.alert(error.message))}>Issue enrollment code</Button>}
           {onDeleteDevice ? (
             <Button
               variant="destructive"
               size="sm"
               disabled={isDeleting}
               onClick={async () => {
-                if (window.confirm(`Are you sure you want to remove "${device.name}" (${device.deviceId}) from the MDM fleet?`)) {
+                if (window.confirm(`Are you sure you want to remove "${device.name}" (${encodeURIComponent(device.deviceId)}) from the MDM fleet?`)) {
                   setIsDeleting(true);
                   try {
                     await onDeleteDevice(device.deviceId);

@@ -41,7 +41,7 @@ export interface DeviceCardProps {
   isActionLoading?: boolean;
 }
 
-export function DeviceCard({
+function DeviceCardView({
   device: deviceProp,
   kiosk: kioskProp,
   onSendReload,
@@ -59,7 +59,7 @@ export function DeviceCard({
   const [copiedId, setCopiedId] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [relativeTime, setRelativeTime] = useState('');
-  const [secondsAgo, setSecondsAgo] = useState(0);
+  const [secondsAgo, setSecondsAgo] = useState(999999);
 
   // Live timer calculating exact relative lastSeen
   useEffect(() => {
@@ -89,7 +89,7 @@ export function DeviceCard({
     return () => clearInterval(interval);
   }, [device.lastSeen]);
 
-  const isOnline = secondsAgo < 420; // 7 minutes online threshold
+  const isOnline = secondsAgo < 120; // Must match backend presence thresholds
   const currentUrl = device.targetUrl || device.kioskUrl || device.url || 'https://app.hotel.saikotechsolutions.com/guest-booking/zicarelli';
   const isLocked = device.lockTaskState === 'LOCKED' || device.lockTaskState === 'PINNED';
 
@@ -195,7 +195,7 @@ export function DeviceCard({
                   isOnline ? 'bg-emerald-500' : 'bg-rose-500'
                 )}
               ></span>
-              <span>{isOnline ? 'Online' : 'Offline'}</span>
+              <span>{!isOnline ? 'Offline' : secondsAgo >= 60 ? 'Stale' : 'Online'}</span>
             </Badge>
 
             {/* Battery Indicator if telemetry present */}
@@ -390,4 +390,5 @@ export function DeviceCard({
 }
 
 // Backward-compatible alias
+export const DeviceCard = React.memo(DeviceCardView);
 export const KioskCard = DeviceCard;

@@ -1,18 +1,5 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/v1/kiosks/:path*",
-        destination: "/api/kiosks/:path*",
-      },
-      {
-        source: "/api/kiosks/v1/:deviceId/commands",
-        destination: "/api/kiosks/:deviceId/commands",
-      },
-    ];
-  },
-};
-
+// The dashboard is a static frontend; APIs are served independently by Rails.
+const nextConfig: NextConfig = { output: "export" };
 export default nextConfig;

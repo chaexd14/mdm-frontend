@@ -1,16 +1,17 @@
 {
-  "name": "saikotech-mdm-dashboard",
+  "name": "mdm-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "node scripts/serve.mjs",
+    "lint": "eslint",
+    "test:reconciliation": "node --test tests/reconciliation.test.mjs",
+    "bench:reconciliation": "node scripts/benchmark-reconciliation.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@supabase/supabase-js": "^2.112.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.35.0",

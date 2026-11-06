@@ -58,7 +58,7 @@ export function DeviceTableView({
 
   const isOnline = (lastSeen?: string | null) => {
     if (!lastSeen) return false;
-    return Date.now() - new Date(lastSeen).getTime() < 7 * 60 * 1000;
+    return Date.now() - new Date(lastSeen).getTime() < 2 * 60 * 1000;
   };
 
   const handleLock = (deviceId: string) => {

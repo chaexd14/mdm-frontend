@@ -1,36 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MDM dashboard
 
-## Getting Started
+Static Next.js/React frontend for the Rails API in E:/mdm-backend. All device state, configuration, credentials, commands and events belong to Rails/PostgreSQL.
 
-First, run the development server:
-
-```bash
+~~~powershell
+npm install
+Copy-Item .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+~~~
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Set NEXT_PUBLIC_MDM_API_URL to the Rails origin (without /api or a trailing slash), and configure Rails FRONTEND_ORIGINS for the dashboard origin. Start Rails on port 3001. Sign in with its administrator token when authentication is enabled. Tokens remain in browser memory; never put an administrator secret in NEXT_PUBLIC_* variables. This is an administrator API-token sign-in, not individual user accounts or tenant roles.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Register the exact Device ID shown by the APK and enter the returned one-time enrollment code in the device admin screen. Device details can issue a replacement code, rotating the credential when redeemed.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Authenticated streaming fetch carries SSE with Authorization and Last-Event-ID headers; tokens are never placed in stream URLs. The dashboard reconciles snapshots, polls faster while disconnected, and rejects snapshot responses superseded by newer events. Presence uses the same two-minute cutoff as Rails, with separate stale connection quality after one minute. Command history is paginated, counts come from the full queue, and only a device can report execution. Administrators can cancel commands before delivery. Desired and reported configuration versions appear in device details.
 
-## Learn More
+Run npx tsc --noEmit and npm run build to validate. The production build exports out/; host that directory or run npm start for local preview. Set the real Rails HTTPS origin before building. No production URL has been selected. The APK must be rebuilt, configured for that Rails API and enrolled; old Vercel telemetry is not automatically imported.
 
-To learn more about Next.js, take a look at the following resources:
+See [the communication rollout guide](../saikotech-android-mdm/docs/production-communication.md) for deployment order and verification.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Reconciliation and fleet rendering
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The dashboard merges per-device revisions, batches live patches, preserves unchanged card references and renders at most 48 devices per page. Device details distinguish connectivity, configuration application, page load and optional app readiness. Reconciliation tests and a Node-only synthetic benchmark are available through npm run test:reconciliation and npm run bench:reconciliation (Node 24). See [readiness and performance rollout](../saikotech-android-mdm/docs/readiness-and-performance.md).

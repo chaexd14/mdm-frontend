@@ -1,3 +1,4 @@
+import { ApiAccess } from "@/components/ApiAccess";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
@@ -34,7 +35,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <TooltipProvider>
-          {children}
+          <ApiAccess>{children}</ApiAccess>
           <Toaster richColors position="bottom-right" />
         </TooltipProvider>
       </body>

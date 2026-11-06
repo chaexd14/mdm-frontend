@@ -190,7 +190,7 @@ export function EnrollDeviceModal({
           </div>
 
           <Card className="p-2.5 bg-muted/20 text-[11px] text-muted-foreground">
-            Once enrolled, the Android MDM app on the device will authenticate with this Device ID to send heartbeats and receive remote commands.
+            After registration, enter the issued enrollment code in the Android admin screen. A Device ID alone does not authenticate a device.
           </Card>
 
           {/* Action Buttons */}
